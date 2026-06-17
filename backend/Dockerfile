@@ -1,10 +1,7 @@
 FROM python:3.10-slim
 
-# Install system dependencies for OpenCV and Tesseract
+# Install system dependencies for OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-vie \
     libglib2.0-0 \
     libgl1 \
     libgomp1 \
@@ -14,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
 
 COPY . .
 

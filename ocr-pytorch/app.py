@@ -132,9 +132,11 @@ async def ocr(request: OCRRequest):
                         
                     paddle_data = paddle_resp.json()
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to communicate with Paddle layout detection service: {str(e)}"
+                    detail=f"Failed to communicate with Paddle layout detection service: {type(e).__name__}: {str(e)}"
                 )
                 
             paddle_words = paddle_data.get("words", [])

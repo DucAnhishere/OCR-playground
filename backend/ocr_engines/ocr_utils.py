@@ -1,4 +1,3 @@
-import numpy as np
 
 def merge_adjacent_words(words: list[dict], gap_ratio: float = 1.5) -> list[dict]:
     """

@@ -43,9 +43,6 @@ const ControlPanel = ({ config, updateConfig, engine, setEngine, languages, setL
               <option value="paddle_structure" disabled={!backendStatus || !backendStatus.paddle_structure_installed}>
                 PP-Structure V3 (Layout & Tables) {backendStatus && !backendStatus.paddle_structure_installed ? ' (Chưa cài)' : ''}
               </option>
-              <option value="tesseract" disabled={!backendStatus || !backendStatus.tesseract_installed}>
-                Tesseract OCR (Classic + LSTM) {backendStatus && !backendStatus.tesseract_installed ? ' (Chưa cài)' : ''}
-              </option>
             </select>
           </div>
 

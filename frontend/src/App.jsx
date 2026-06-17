@@ -6,15 +6,11 @@ import {
 
 import ControlPanel from './components/ControlPanel';
 import BoundingBoxViewer from './components/BoundingBoxViewer';
-import StructuredResult from './components/StructuredResult';
 import './App.css';
 
 const API_BASE = "http://127.0.0.1:8000/api";
 
 function App() {
-  // Navigation
-  const [activeTab, setActiveTab] = useState('playground'); // 'playground', 'structured', 'learn'
-
   // Image states
   const [originalImage, setOriginalImage] = useState(null); // base64
   const [processedImage, setProcessedImage] = useState(null); // base64
@@ -44,7 +40,6 @@ function App() {
       // Clear previous OCR results to avoid coordinates misalignment
       setResults([]);
       setSelectedWordIndex(null);
-      setStructuredData(null);
       setDetectedTables([]);
       setExecutionStats(null);
 
@@ -71,7 +66,6 @@ function App() {
 
   // Results & stats
   const [results, setResults] = useState([]);
-  const [structuredData, setStructuredData] = useState(null);
   const [detectedTables, setDetectedTables] = useState([]);
   const [executionStats, setExecutionStats] = useState(null);
   const [activeWordIndex, setActiveWordIndex] = useState(null);
@@ -146,7 +140,6 @@ function App() {
         setProcessedImage(event.target.result);
         setResults([]);
         setSelectedWordIndex(null);
-        setStructuredData(null);
         setDetectedTables([]);
         setExecutionStats(null);
         setErrorMessage(null);
@@ -202,7 +195,6 @@ function App() {
         setProcessedImage(data.preprocessed_image);
         setResults(data.results);
         setSelectedWordIndex(null);
-        setStructuredData(data.structured_data);
         setDetectedTables(data.metadata.detected_tables || []);
         setExecutionStats({
           time: data.execution_time_seconds,
@@ -257,24 +249,6 @@ function App() {
         </div>
       </header>
 
-      {/* Tabs Header Navigation */}
-      <nav className="tabs-header">
-        <button 
-          className={`tab-btn ${activeTab === 'playground' ? 'active' : ''}`}
-          onClick={() => setActiveTab('playground')}
-        >
-          <Settings2 size={16} />
-          Playground Tương Tác
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'structured' ? 'active' : ''}`}
-          onClick={() => setActiveTab('structured')}
-        >
-          <FileText size={16} />
-          Trích Xuất Cấu Trúc (JSON)
-        </button>
-      </nav>
-
       {/* Main Content Area */}
       {errorMessage && (
         <div style={{
@@ -292,8 +266,7 @@ function App() {
         </div>
       )}
 
-      {activeTab === 'playground' && (
-        <div className="app-grid">
+      <div className="app-grid">
           
           {/* Sidebar Controls */}
           <ControlPanel 
@@ -479,17 +452,9 @@ function App() {
 
               </div>
             )}
-
           </div>
-        </div>
-      )}
 
-      {activeTab === 'structured' && (
-        <StructuredResult data={structuredData} detectedTables={detectedTables} />
-      )}
-
-
-
+      </div>
     </div>
   );
 }

@@ -49,7 +49,7 @@ if [ $? -eq 0 ]; then
     echo -e "\n${GREEN}=======================================================${NC}"
     echo -e "${GREEN}🎉 All microservices built successfully!${NC}"
     echo -e "   - ${BLUE}frontend${NC} (React/Vite)"
-    echo -e "   - ${BLUE}backend${NC} (Gateway + Tesseract)"
+    echo -e "   - ${BLUE}backend${NC} (API Gateway)"
     echo -e "   - ${BLUE}ocr-pytorch${NC} (EasyOCR & VietOCR)"
     echo -e "   - ${BLUE}ocr-paddle${NC} (PaddleOCR & PP-Structure)"
     echo -e "\n👉 Run the following command to start the application:"

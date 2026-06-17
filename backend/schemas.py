@@ -20,8 +20,8 @@ class PreprocessConfig(BaseModel):
 class OCRRequest(BaseModel):
     image: str = Field(..., description="Base64 encoded image string")
     config: PreprocessConfig = Field(..., description="Configuration for preprocessing pipeline")
-    engine: str = Field("easyocr", description="OCR Engine to use: 'easyocr' or 'tesseract'")
-    languages: List[str] = Field(["vi", "en"], description="Languages to load for EasyOCR/Tesseract")
+    engine: str = Field("easyocr", description="OCR Engine to use: 'easyocr', 'vietocr', 'paddleocr', 'paddle_structure'")
+    languages: List[str] = Field(["vi", "en"], description="Languages to load for OCR engines")
     merge_boxes: bool = Field(True, description="Merge horizontally aligned and adjacent word bounding boxes")
 
 class PreprocessRequest(BaseModel):
@@ -35,16 +35,12 @@ class StatusResponse(BaseModel):
     status: str = Field(..., description="Backend system status (e.g. 'online')")
     gpu_acceleration: bool = Field(..., description="True if PyTorch has CUDA or MPS acceleration active")
     gpu_type: str = Field(..., description="GPU Type ('Apple Silicon (MPS)', 'NVIDIA (CUDA)', 'None')")
-    tesseract_installed: bool = Field(..., description="True if Tesseract is installed and in PATH")
     paddleocr_installed: bool = Field(..., description="True if PaddleOCR is installed and available")
     paddle_structure_installed: bool = Field(..., description="True if PaddleOCR Structure is installed and available")
     vietocr_installed: bool = Field(..., description="True if VietOCR is installed and available")
     pytorch_version: str = Field(..., description="Installed PyTorch library version")
     device_allocated: str = Field(..., description="Device used ('GPU' or 'CPU')")
 
-
-class SampleResponse(BaseModel):
-    image: str = Field(..., description="Base64 encoded generated sample image")
 
 class PreprocessResponse(BaseModel):
     success: bool = Field(True, description="True if processing succeeded")
@@ -62,20 +58,11 @@ class OCRWordResult(BaseModel):
     confidence: float = Field(..., description="Confidence score from 0 to 100")
     box: OCRWordBox = Field(..., description="Bounding box of the word")
 
-class StructuredData(BaseModel):
-    merchant_name: str = Field("Không phát hiện", description="Merchant name")
-    email: str = Field("Không phát hiện", description="Email address")
-    phone_number: str = Field("Không phát hiện", description="Phone number")
-    date: str = Field("Không phát hiện", description="Invoice/Receipt date")
-    total_amount: str = Field("Không phát hiện", description="Total transaction amount")
-    detected_lines_count: int = Field(..., description="Total line count reconstructed")
-
 class OCRResponse(BaseModel):
     success: bool = Field(True, description="True if OCR operation succeeded")
     preprocessed_image: str = Field(..., description="Base64 encoded preprocessed image")
     results: List[OCRWordResult] = Field(..., description="List of recognized word bounding boxes")
     metadata: Dict[str, Any] = Field(..., description="Additional metadata about execution")
-    engine: str = Field(..., description="OCR Engine used ('easyocr' or 'tesseract')")
+    engine: str = Field(..., description="OCR Engine used ('easyocr', 'vietocr', 'paddleocr', 'paddle_structure')")
     execution_time_seconds: float = Field(..., description="Duration of OCR execution in seconds")
     gpu_accelerated: bool = Field(..., description="True if GPU acceleration was active during OCR")
-    structured_data: StructuredData = Field(..., description="Extracted heuristic invoice key fields")
