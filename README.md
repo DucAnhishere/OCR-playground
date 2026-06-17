@@ -42,8 +42,10 @@ graph TD
     Nginx <--> | /api/* | BFF[FastAPI Orchestrator]
     
     BFF <--> |1. Preprocess Image| IMG[Image Processor Service<br/>OpenCV]
-    BFF <--> |2. OCR Request| PY[PyTorch OCR Microservice<br/>Port 8002]
-    BFF <--> |2. OCR Request| PD[Paddle OCR Microservice<br/>Port 8003]
+    BFF <--> |2. EasyOCR / VietOCR| PY[PyTorch OCR Microservice<br/>Port 8002]
+    BFF <--> |2. PaddleOCR / PP-Structure| PD[Paddle OCR Microservice<br/>Port 8003]
+    
+    PY -.-> |VietOCR: 1. Request Layout / BBoxes| PD
     
     subgraph PyTorch [PyTorch Container]
         PY
@@ -80,7 +82,34 @@ graph TD
     class W_Easy,W_Viet,W_Torch,W_Paddle,W_Paddlex mount;
 ```
 
-### Microservice Directory Structure
+### 🔄 VietOCR Hybrid Processing Pipeline
+Because VietOCR excels at Vietnamese handwriting/printed line-level text recognition but lacks a layout detection layout module of its own, the stack implements a **hybrid cross-service orchestration flow**:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User / Browser
+    participant FE as Frontend (React)
+    participant BFF as Orchestrator (BFF)
+    participant PY as PyTorch Service (VietOCR)
+    participant PD as Paddle Service (PP-Structure)
+    
+    User->>FE: Upload image & trigger OCR
+    FE->>BFF: POST /api/ocr (engine="vietocr")
+    BFF->>PY: POST /api/ocr (engine="vietocr")
+    Note over PY: Needs layout coordinates for cropping
+    PY->>PD: POST /api/ocr (engine="paddle_structure")
+    Note over PD: Runs PP-StructureV3 (Layout Det)
+    PD-->>PY: Return bounding boxes & unwarped image
+    Note over PY: Crops image per box
+    Note over PY: Runs VietOCR text recognition on crops
+    PY-->>BFF: Return text & coordinates
+    Note over BFF: Merges adjacent boxes
+    BFF-->>FE: Return final structured OCR response
+    FE-->>User: Render overlay on image & sidebar text
+```
+
+### 📂 Microservice Directory Structure
 ```
 ocr-playground/
 ├── nginx/                    # Edge Proxy Configuration
