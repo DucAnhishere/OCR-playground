@@ -14,6 +14,7 @@ backend/backend.log
 backend/.venv/
 backend/venv/
 backend/env/
+.env
 
 # --- Node / Frontend ---
 node_modules/

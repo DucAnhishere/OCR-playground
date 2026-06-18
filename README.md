@@ -9,37 +9,17 @@ It is built on a **consolidated microservices architecture** orchestrated via Do
 
 ## 🏛️ System Architecture
 
-The project decouples compute-heavy machine learning runtimes (PyTorch, PaddlePaddle), lightweight image processing tasks (OpenCV), and traffic routing into distinct microservices.
+The project decouples compute-heavy machine learning runtimes (PyTorch, PaddlePaddle), lightweight image processing tasks (OpenCV), and traffic routing into distinct microservices. It now also integrates **Supabase Storage** to handle image persistence, optimizing performance by returning lightweight public URLs instead of heavy Base64 strings to the frontend.
 
-### Unicode System Diagram (Plain Text)
-```text
-+--------------------------------------------------------------------------------+
-|                                  USER / BROWSER                                |
-+---------------------------------------+----------------------------------------+
-                                        | HTTP / Port 8000
-                                        v
-+--------------------------------------------------------------------------------+
-|                             NGINX EDGE PROXY (Port 80)                         |
-+-------------------+---------------------------------------+--------------------+
-                    | /                                     | /api/*
-                    v                                       v
-+-----------------------------------+   +----------------------------------------+
-|   FRONTEND UI (React + Vite)      |   |        FASTAPI ORCHESTRATOR (BFF)      |
-+-----------------------------------+   +---+---------------+--------------------+
-                                            |               |               |
-                                            v               v               v
-            +-------------------------------+ +-------------+ +-------------+
-            | IMAGE PROCESSOR (OpenCV)      | | OCR PYTORCH | | OCR PADDLE  |
-            +-------------------------------+ +-------------+ +-------------+
-```
-
-### Flowchart Diagram (Mermaid)
+### Flowchart Diagram
 ```mermaid
 graph TD
     User([User / Browser]) <--> |HTTP / Port 8000| Nginx[Nginx Edge Proxy]
     
     Nginx <--> | / | FE[Vite + React Frontend]
     Nginx <--> | /api/* | BFF[FastAPI Orchestrator]
+    
+    BFF <--> |Upload Original & Processed Images| Supabase[(Supabase Storage)]
     
     BFF <--> |1. Preprocess Image| IMG[Image Processor Service<br/>OpenCV]
     BFF <--> |2. EasyOCR / VietOCR| PY[PyTorch OCR Microservice<br/>Port 8002]
@@ -112,12 +92,18 @@ sequenceDiagram
 ### 📂 Microservice Directory Structure
 ```
 ocr-playground/
+├── .env                      # Global security configurations (Supabase Keys)
 ├── nginx/                    # Edge Proxy Configuration
 ├── backend/                  # BFF Orchestrator Service
-│   └── app.py                # Gateway routing logic
+│   ├── routers/              # API Endpoints (system.py, ocr.py)
+│   ├── services/             # Core Logic (supabase, orchestrator)
+│   ├── const.py              # Extracted constants and URLs
+│   └── app.py                # Gateway routing & CORS setup
 ├── image-processor/          # OpenCV image processing microservice
 ├── frontend/                 # React UI Dashboard (Vite)
 ├── ocr-pytorch/              # PyTorch Container (EasyOCR & VietOCR)
+│   ├── const.py              # Extracted constants and URLs
+│   └── app.py                
 ├── ocr-paddle/               # PaddlePaddle Container (PaddleOCR & PP-StructureV3)
 ├── weights/                  # Persistent host-cached directory for model weights
 └── download_weights.py       # Host-based pre-download script for weight files
@@ -127,11 +113,12 @@ ocr-playground/
 
 ## ✨ Key Features
 
-1. **Interactive OpenCV Filters (Live)**: Adjust sliders (Grayscale, Brightness/Contrast, Otsu/Adaptive Thresholds, Dilation/Erosion) in the UI and preview the processed image instantly.
-2. **Auto-Deskewing**: Automatically estimates skewed document angles via Hough Line Transforms and corrects orientation prior to text extraction.
-3. **Decoupled Heavy Services**: Heavy PyTorch, PaddlePaddle, and OpenCV tasks run in completely isolated environments to prevent memory bloat on the Orchestrator.
-4. **Adjacent Box Merging**: Backend intelligently groups word-level bounding boxes into larger sentences/lines using spatial proximity heuristics to preserve tabular document layouts.
-5. **Robust Host-Cached Weights**: Pre-downloaded weights are mounted via Docker volumes, making container execution fast, deterministic, and network-independent.
+1. **Production-Ready Storage (Supabase)**: Uploads original and processed images directly to a Supabase bucket via `multipart/form-data`, passing lightweight public URLs to the frontend instead of massive Base64 strings.
+2. **Interactive OpenCV Filters (Live Preview)**: Adjust sliders (Grayscale, Brightness/Contrast, Otsu/Adaptive Thresholds, Dilation/Erosion) in the UI and preview the processed image instantly (using ultra-fast local base64 passing for live preview without polluting storage).
+3. **Auto-Deskewing**: Automatically estimates skewed document angles via Hough Line Transforms and corrects orientation prior to text extraction.
+4. **Decoupled Heavy Services**: Heavy PyTorch, PaddlePaddle, and OpenCV tasks run in completely isolated environments to prevent memory bloat on the Orchestrator. Configuration is cleanly abstracted using `.env` and `const.py` files.
+5. **Adjacent Box Merging**: Backend intelligently groups word-level bounding boxes into larger sentences/lines using spatial proximity heuristics to preserve tabular document layouts.
+6. **Robust Host-Cached Weights**: Pre-downloaded weights are mounted via Docker volumes, making container execution fast, deterministic, and network-independent.
 
 ---
 
