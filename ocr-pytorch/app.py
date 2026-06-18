@@ -11,6 +11,12 @@ from pydantic import BaseModel
 from vietocr.tool.predictor import Predictor
 from vietocr.tool.config import Cfg
 
+from const import (
+    PADDLE_SERVICE_URL,
+    VIETOCR_WEIGHTS_PATH,
+    VIETOCR_CONFIG_NAME
+)
+
 app = FastAPI(title="OCR PyTorch Microservice (EasyOCR & VietOCR)")
 
 class OCRRequest(BaseModel):
@@ -32,11 +38,11 @@ def get_easyocr_reader(langs: list[str]) -> easyocr.Reader:
 
 def get_vietocr_predictor() -> Predictor:
     if "predictor" not in _vietocr_cache:
-        print("[PyTorch Service] Initializing VietOCR (VGG + Transformer)...")
-        config = Cfg.load_config_from_name('vgg_transformer')
+        print(f"[PyTorch Service] Initializing VietOCR ({VIETOCR_CONFIG_NAME})...")
+        config = Cfg.load_config_from_name(VIETOCR_CONFIG_NAME)
         
         # Load local weights mapped into container to avoid downloading
-        config['weights'] = '/root/.vietocr/vgg_transformer.pth'
+        config['weights'] = VIETOCR_WEIGHTS_PATH
         
         if torch.backends.mps.is_available():
             config['device'] = 'mps'
@@ -110,7 +116,7 @@ async def ocr(request: OCRRequest):
             
         elif request.engine == 'vietocr':
             # --- Run VietOCR ---
-            paddle_service_url = os.getenv("PADDLE_SERVICE_URL", "http://ocr-paddle:8003")
+            paddle_service_url = PADDLE_SERVICE_URL
             
             # 1. Query ocr-paddle service for PP-Structure bounding boxes and unwarping
             try:

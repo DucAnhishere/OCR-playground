@@ -12,8 +12,9 @@ const API_BASE = "http://127.0.0.1:8000/api";
 
 function App() {
   // Image states
-  const [originalImage, setOriginalImage] = useState(null); // base64
-  const [processedImage, setProcessedImage] = useState(null); // base64
+  const [originalFile, setOriginalFile] = useState(null); // File object
+  const [originalImage, setOriginalImage] = useState(null); // base64 (for live preview)
+  const [processedImage, setProcessedImage] = useState(null); // base64 or URL
   
   // OCR and Processing configurations
   const [config, setConfig] = useState({
@@ -134,6 +135,7 @@ function App() {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setOriginalFile(file);
       const reader = new FileReader();
       reader.onload = (event) => {
         setOriginalImage(event.target.result);
@@ -174,25 +176,25 @@ function App() {
   };
 
   const runFullOCR = async () => {
-    if (!originalImage) return;
+    if (!originalFile) return;
     setLoading(true);
     setErrorMessage(null);
     try {
+      const formData = new FormData();
+      formData.append("file", originalFile);
+      formData.append("config", JSON.stringify(config));
+      formData.append("engine", engine);
+      formData.append("languages", JSON.stringify(languages));
+      formData.append("merge_boxes", mergeBoxes);
+
       const res = await fetch(`${API_BASE}/ocr`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: originalImage,
-          config: config,
-          engine: engine,
-          languages: languages,
-          merge_boxes: mergeBoxes
-        })
+        body: formData
       });
       
       if (res.ok) {
         const data = await res.json();
-        setProcessedImage(data.preprocessed_image);
+        setProcessedImage(data.processed_image_url || data.preprocessed_image);
         setResults(data.results);
         setSelectedWordIndex(null);
         setDetectedTables(data.metadata.detected_tables || []);

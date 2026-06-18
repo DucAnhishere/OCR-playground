@@ -19,6 +19,8 @@ services:
       - "8000"
     volumes:
       - ./backend:/app
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - IMAGE_PROCESSOR_URL=http://image-processor:8004

@@ -60,7 +60,9 @@ class OCRWordResult(BaseModel):
 
 class OCRResponse(BaseModel):
     success: bool = Field(True, description="True if OCR operation succeeded")
-    preprocessed_image: str = Field(..., description="Base64 encoded preprocessed image")
+    preprocessed_image: str = Field(None, description="Base64 encoded preprocessed image (legacy/fallback)")
+    original_image_url: str = Field(None, description="Public URL of the original uploaded image on Supabase")
+    processed_image_url: str = Field(None, description="Public URL of the preprocessed image on Supabase")
     results: List[OCRWordResult] = Field(..., description="List of recognized word bounding boxes")
     metadata: Dict[str, Any] = Field(..., description="Additional metadata about execution")
     engine: str = Field(..., description="OCR Engine used ('easyocr', 'vietocr', 'paddleocr', 'paddle_structure')")
