@@ -21,41 +21,32 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# Check if weights folder exists and is not empty
-if [ ! -d "weights" ] || [ -z "$(ls -A weights 2>/dev/null)" ]; then
-    echo -e "${YELLOW}⚠️  Warning: Weights directory not found or empty.${NC}"
-    echo -e "${YELLOW}To avoid slow builds and network timeouts inside Docker, we recommend downloading model weights natively first.${NC}"
-    read -p "Do you want to download model weights now using host virtualenv? (y/n): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if [ -f "backend/.venv/bin/python" ]; then
-            echo -e "${BLUE}📥 Downloading weights using backend virtualenv...${NC}"
-            backend/.venv/bin/python download_weights.py
-        else
-            echo -e "${RED}❌ Error: backend virtual environment python not found at backend/.venv/bin/python. Please make sure the virtual environment exists.${NC}"
-            exit 1
-        fi
-    else
-        echo -e "${YELLOW}Continuing build without pre-downloading weights. Containers might download them on first run.${NC}"
-    fi
-fi
+# Removed host virtualenv weight download prompt. Weights will be downloaded during deployment.
 
 echo -e "${YELLOW}🐳 Starting build via Docker Compose...${NC}\n"
 
-# Run docker compose build
-docker compose build
+# Run docker compose build sequentially to prevent OOM/freeze
+docker compose build frontend
+if [ $? -ne 0 ]; then echo -e "\n${RED}❌ Error: frontend build failed.${NC}"; exit 1; fi
 
-if [ $? -eq 0 ]; then
-    echo -e "\n${GREEN}=======================================================${NC}"
-    echo -e "${GREEN}🎉 All microservices built successfully!${NC}"
-    echo -e "   - ${BLUE}frontend${NC} (React/Vite)"
-    echo -e "   - ${BLUE}backend${NC} (API Gateway)"
-    echo -e "   - ${BLUE}ocr-pytorch${NC} (EasyOCR & VietOCR)"
-    echo -e "   - ${BLUE}ocr-paddle${NC} (PaddleOCR & PP-Structure)"
-    echo -e "\n👉 Run the following command to start the application:"
-    echo -e "   ${GREEN}./deploy.sh${NC}"
-    echo -e "${GREEN}=======================================================${NC}"
-else
-    echo -e "\n${RED}❌ Error: Docker Compose build failed. Please check the logs above.${NC}"
-    exit 1
-fi
+docker compose build orchestrator
+if [ $? -ne 0 ]; then echo -e "\n${RED}❌ Error: orchestrator build failed.${NC}"; exit 1; fi
+
+docker compose build image-processor
+if [ $? -ne 0 ]; then echo -e "\n${RED}❌ Error: image-processor build failed.${NC}"; exit 1; fi
+
+docker compose build ocr-pytorch
+if [ $? -ne 0 ]; then echo -e "\n${RED}❌ Error: ocr-pytorch build failed.${NC}"; exit 1; fi
+
+docker compose build ocr-paddle
+if [ $? -ne 0 ]; then echo -e "\n${RED}❌ Error: ocr-paddle build failed.${NC}"; exit 1; fi
+
+echo -e "\n${GREEN}=======================================================${NC}"
+echo -e "${GREEN}🎉 All microservices built successfully!${NC}"
+echo -e "   - ${BLUE}frontend${NC} (React/Vite)"
+echo -e "   - ${BLUE}backend${NC} (API Gateway)"
+echo -e "   - ${BLUE}ocr-pytorch${NC} (EasyOCR & VietOCR)"
+echo -e "   - ${BLUE}ocr-paddle${NC} (PaddleOCR & PP-Structure)"
+echo -e "\n👉 Run the following command to start the application:"
+echo -e "   ${GREEN}./deploy.sh${NC}"
+echo -e "${GREEN}=======================================================${NC}"

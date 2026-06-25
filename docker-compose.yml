@@ -14,6 +14,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      network: host
     container_name: ocr_orchestrator
     expose:
       - "8000"
@@ -36,6 +37,7 @@ services:
     build:
       context: ./image-processor
       dockerfile: Dockerfile
+      network: host
     container_name: ocr_image_processor
     expose:
       - "8004"
@@ -49,6 +51,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      network: host
     container_name: ocr_frontend
     expose:
       - "5173"
@@ -62,6 +65,7 @@ services:
     build:
       context: ./ocr-pytorch
       dockerfile: Dockerfile
+      network: host
     container_name: ocr_pytorch
     expose:
       - "8002"
@@ -73,12 +77,21 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PADDLE_SERVICE_URL=http://ocr-paddle:8003
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
     command: uvicorn app:app --host 0.0.0.0 --port 8002
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   ocr-paddle:
     build:
       context: ./ocr-paddle
       dockerfile: Dockerfile
+      network: host
     container_name: ocr_paddle
     expose:
       - "8003"
@@ -89,4 +102,12 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - FLAGS_use_mkldnn=0
+      - FLAGS_fraction_of_gpu_memory_to_use=0.3
     command: uvicorn app:app --host 0.0.0.0 --port 8003
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
