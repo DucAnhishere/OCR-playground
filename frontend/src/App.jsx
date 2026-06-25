@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Upload, Play, RefreshCw, Cpu, Layers, BookOpen, 
-  Settings2, FileText, CheckCircle2, AlertCircle, Sparkles
+  Upload, Play, RefreshCw, Layers, FileText, AlertCircle, Sparkles
 } from 'lucide-react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
