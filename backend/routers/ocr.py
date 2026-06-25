@@ -1,42 +1,55 @@
 import json
-import traceback
-import httpx
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form
+import logging
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Request
 
 from schemas import PreprocessRequest, PreprocessResponse, OCRResponse
 from services.orchestrator_service import process_image, execute_ocr_pipeline
+from exceptions import (
+    ImageProcessorError,
+    OCRServiceError,
+    SupabaseUploadError,
+    UnsupportedEngineError,
+)
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
+
 @router.post("/preprocess", response_model=PreprocessResponse)
-async def api_preprocess(request: PreprocessRequest):
+async def api_preprocess(request_data: PreprocessRequest, request: Request):
+    client = request.app.state.http_client
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            proc_data = await process_image(client, request.image, request.config.model_dump())
-            
+        proc_data = await process_image(client, request_data.image, request_data.config.model_dump())
         return {
             "success": True,
             "processed_image": proc_data["image"],
             "metadata": proc_data["meta"]
         }
+    except ImageProcessorError as e:
+        logger.error("Image Processor service error: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Unexpected error during preprocessing")
         raise HTTPException(status_code=500, detail=f"Preprocessing error: {str(e)}")
+
 
 @router.post("/ocr", response_model=OCRResponse)
 async def api_ocr(
+    request: Request,
     file: UploadFile = File(...),
     config: str = Form(...),
     engine: str = Form("easyocr"),
     languages: str = Form("[\"vi\", \"en\"]"),
     merge_boxes: bool = Form(True)
 ):
+    client = request.app.state.http_client
     try:
         file_bytes = await file.read()
         config_dict = json.loads(config)
         languages_list = json.loads(languages)
-        
+
         return await execute_ocr_pipeline(
+            client=client,
             file_bytes=file_bytes,
             filename=file.filename,
             content_type=file.content_type,
@@ -45,9 +58,19 @@ async def api_ocr(
             languages_list=languages_list,
             merge_boxes=merge_boxes
         )
+    except UnsupportedEngineError as e:
+        logger.warning("Unsupported OCR engine requested: %s", e.engine)
+        raise HTTPException(status_code=400, detail=str(e))
+    except SupabaseUploadError as e:
+        logger.error("Supabase upload error: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+    except (ImageProcessorError, OCRServiceError) as e:
+        logger.error("Upstream service error: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Unexpected error in OCR pipeline")
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"OCR Orchestrator execution failed: {str(e)}"
         )
+
