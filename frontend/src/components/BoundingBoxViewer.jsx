@@ -76,13 +76,13 @@ const BoundingBoxViewer = ({
         )}
 
         {processedImage ? (
-          <div className="relative inline-block max-w-full max-h-full">
+          <div className="relative inline-block max-w-full max-h-full transition-transform duration-700 group-hover:scale-[1.01]">
             <img 
               ref={imageRef}
               src={processedImage} 
               alt="OCR Work" 
               onLoad={updateScaleFactors}
-              className="block max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl transition-transform duration-700 group-hover:scale-[1.01]"
+              className="block max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl"
             />
             
             {/* Active scanline animation if loading */}
