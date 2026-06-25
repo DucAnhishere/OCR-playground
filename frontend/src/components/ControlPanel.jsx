@@ -1,14 +1,14 @@
 import React from 'react';
-import { Sliders, Cpu, Eye, Image as ImageIcon } from 'lucide-react';
+import { Sliders, Cpu } from 'lucide-react';
 
 const ControlPanel = ({ config, updateConfig, engine, setEngine, languages, setLanguages, backendStatus, mergeBoxes, setMergeBoxes }) => {
   
   const handleSliderChange = (key, value) => {
-    updateConfig({ [key]: value }, false); // Debounced preview for sliders
+    updateConfig({ [key]: value }, false); 
   };
 
   const handleCheckboxChange = (key, checked) => {
-    updateConfig({ [key]: checked }, true); // Instant preview for checkboxes
+    updateConfig({ [key]: checked }, true); 
   };
 
   const toggleLanguage = (langCode) => {
@@ -22,153 +22,144 @@ const ControlPanel = ({ config, updateConfig, engine, setEngine, languages, setL
   };
 
   return (
-    <div className="sidebar">
+    <div className="flex flex-col gap-6">
+      
       {/* OCR Engine Selection */}
-      <div className="glass-card">
-        <h3 className="card-title">
-          <Cpu size={18} />
-          Cấu Hình OCR Engine
+      <div className="flex flex-col gap-4">
+        <h3 className="flex items-center gap-2 text-white font-semibold border-b border-white/5 pb-2">
+          <Cpu className="text-purple-400 w-5 h-5" />
+          OCR Engine Config
         </h3>
-        <div className="config-group">
-          <div className="control-item">
-            <label className="control-label">Chọn OCR Engine</label>
-            <select value={engine} onChange={(e) => setEngine(e.target.value)}>
-              <option value="easyocr">EasyOCR (Deep Learning AI)</option>
-              <option value="paddleocr" disabled={!backendStatus || !backendStatus.paddleocr_installed}>
-                PaddleOCR (Baidu PP-OCRv5) {backendStatus && !backendStatus.paddleocr_installed ? ' (Chưa cài)' : ''}
+        
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Select Engine</label>
+            <select 
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all appearance-none cursor-pointer"
+              value={engine} 
+              onChange={(e) => setEngine(e.target.value)}
+            >
+              <option value="easyocr" className="bg-zinc-900">EasyOCR (Deep Learning)</option>
+              <option value="paddleocr" disabled={!backendStatus || !backendStatus.paddleocr_installed} className="bg-zinc-900">
+                PaddleOCR {backendStatus && !backendStatus.paddleocr_installed ? '(Not installed)' : ''}
               </option>
-              <option value="vietocr" disabled={!backendStatus || !backendStatus.vietocr_installed}>
-                VietOCR (Paddle Detector + VietOCR Rec) {backendStatus && !backendStatus.vietocr_installed ? ' (Chưa cài)' : ''}
+              <option value="vietocr" disabled={!backendStatus || !backendStatus.vietocr_installed} className="bg-zinc-900">
+                VietOCR {backendStatus && !backendStatus.vietocr_installed ? '(Not installed)' : ''}
               </option>
-              <option value="paddle_structure" disabled={!backendStatus || !backendStatus.paddle_structure_installed}>
-                PP-Structure V3 (Layout & Tables) {backendStatus && !backendStatus.paddle_structure_installed ? ' (Chưa cài)' : ''}
+              <option value="paddle_structure" disabled={!backendStatus || !backendStatus.paddle_structure_installed} className="bg-zinc-900">
+                PP-Structure V3 {backendStatus && !backendStatus.paddle_structure_installed ? '(Not installed)' : ''}
               </option>
             </select>
           </div>
 
-          <div className="control-item">
-            <label className="control-label">Ngôn Ngữ Nhận Diện</label>
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem' }}>
-              <label className="checkbox-label">
-                <input 
-                  type="checkbox" 
-                  checked={languages.includes('vi')} 
-                  onChange={() => toggleLanguage('vi')}
-                />
-                Tiếng Việt (vi)
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Languages</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${languages.includes('vi') ? 'bg-gradient-to-br from-purple-500 to-cyan-400 border-transparent' : 'border-white/20 bg-white/5 group-hover:border-purple-500/50'}`}>
+                  {languages.includes('vi') && <span className="text-white text-xs font-bold">✓</span>}
+                </div>
+                <input type="checkbox" className="hidden" checked={languages.includes('vi')} onChange={() => toggleLanguage('vi')} />
+                <span className="text-sm text-zinc-300">Vietnamese</span>
               </label>
-              <label className="checkbox-label">
-                <input 
-                  type="checkbox" 
-                  checked={languages.includes('en')} 
-                  onChange={() => toggleLanguage('en')}
-                />
-                Tiếng Anh (en)
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${languages.includes('en') ? 'bg-gradient-to-br from-purple-500 to-cyan-400 border-transparent' : 'border-white/20 bg-white/5 group-hover:border-purple-500/50'}`}>
+                  {languages.includes('en') && <span className="text-white text-xs font-bold">✓</span>}
+                </div>
+                <input type="checkbox" className="hidden" checked={languages.includes('en')} onChange={() => toggleLanguage('en')} />
+                <span className="text-sm text-zinc-300">English</span>
               </label>
             </div>
           </div>
 
-          <div className="control-item" style={{ marginTop: '0.5rem' }}>
-            <label className="checkbox-label" style={{ fontWeight: 500, color: '#f3f4f6' }}>
-              <input 
-                type="checkbox" 
-                checked={mergeBoxes} 
-                onChange={(e) => setMergeBoxes(e.target.checked)}
-              />
-              Tự động gộp cụm chữ (Merge Boxes)
+          <div className="mt-2">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${mergeBoxes ? 'bg-gradient-to-br from-purple-500 to-cyan-400 border-transparent' : 'border-white/20 bg-white/5 group-hover:border-cyan-500/50'}`}>
+                {mergeBoxes && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              <input type="checkbox" className="hidden" checked={mergeBoxes} onChange={(e) => setMergeBoxes(e.target.checked)} />
+              <span className="text-sm font-medium text-zinc-200">Merge Adjacent Boxes</span>
             </label>
           </div>
         </div>
       </div>
 
-      {/* OpenCV Image Preprocessing Controls */}
-      <div className="glass-card">
-        <h3 className="card-title">
-          <Sliders size={18} />
-          Bộ Lọc Tiền Xử Lý (OpenCV)
+      {/* OpenCV Filters */}
+      <div className="flex flex-col gap-4 mt-2">
+        <h3 className="flex items-center gap-2 text-white font-semibold border-b border-white/5 pb-2">
+          <Sliders className="text-cyan-400 w-5 h-5" />
+          Pre-processing Filters
         </h3>
-        <div className="config-group">
-          
-          {/* Contrast & Brightness */}
-          <div className="control-item">
-            <div className="control-label">
-              <span>Độ tương phản (Contrast)</span>
-              <span className="label-val">x{config.contrast.toFixed(1)}</span>
+        
+        <div className="flex flex-col gap-5">
+          {/* Contrast */}
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-zinc-400 font-medium">Contrast</span>
+              <span className="font-mono text-cyan-400">x{config.contrast.toFixed(1)}</span>
             </div>
             <input 
               type="range" 
-              min="0.5" 
-              max="3.0" 
-              step="0.1" 
+              className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-gradient-to-br [&::-webkit-slider-thumb]:from-purple-500 [&::-webkit-slider-thumb]:to-cyan-400 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-125 transition-all"
+              min="0.5" max="3.0" step="0.1" 
               value={config.contrast} 
               onChange={(e) => handleSliderChange('contrast', parseFloat(e.target.value))} 
             />
           </div>
 
-          <div className="control-item">
-            <div className="control-label">
-              <span>Độ sáng (Brightness)</span>
-              <span className="label-val">{config.brightness > 0 ? `+${config.brightness}` : config.brightness}</span>
+          {/* Brightness */}
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-zinc-400 font-medium">Brightness</span>
+              <span className="font-mono text-cyan-400">{config.brightness > 0 ? `+${config.brightness}` : config.brightness}</span>
             </div>
             <input 
               type="range" 
-              min="-100" 
-              max="100" 
-              step="5" 
+              className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-gradient-to-br [&::-webkit-slider-thumb]:from-purple-500 [&::-webkit-slider-thumb]:to-cyan-400 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-125 transition-all"
+              min="-100" max="100" step="5" 
               value={config.brightness} 
               onChange={(e) => handleSliderChange('brightness', parseInt(e.target.value))} 
             />
           </div>
 
-          {/* Flatten & Deskew & Grayscale */}
-          <div className="control-item" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '0.25rem 0' }}>
-            <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <input 
-                type="checkbox" 
-                checked={config.auto_flatten} 
-                onChange={(e) => handleCheckboxChange('auto_flatten', e.target.checked)} 
-              />
-              <span style={{ fontWeight: 600, color: '#a855f7' }}>✨ Trải phẳng phối cảnh (Auto-Flatten)</span>
+          {/* Toggles */}
+          <div className="flex flex-col gap-4">
+            <label className="flex items-center gap-3 cursor-pointer group p-3 rounded-xl bg-purple-500/5 border border-purple-500/20 hover:bg-purple-500/10 transition-colors">
+              <div className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${config.auto_flatten ? 'bg-purple-500 border-transparent shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'border-purple-500/30 bg-transparent'}`}>
+                {config.auto_flatten && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              <input type="checkbox" className="hidden" checked={config.auto_flatten} onChange={(e) => handleCheckboxChange('auto_flatten', e.target.checked)} />
+              <span className="text-sm font-bold text-purple-300">✨ Auto-Flatten</span>
             </label>
 
-            <div style={{ display: 'flex', gap: '1.5rem' }}>
-              <label className="checkbox-label" style={{ flex: 1 }}>
-                <input 
-                  type="checkbox" 
-                  checked={config.grayscale} 
-                  onChange={(e) => handleCheckboxChange('grayscale', e.target.checked)} 
-                />
-                Ảnh xám (Grayscale)
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer group flex-1">
+                <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${config.grayscale ? 'bg-zinc-400 border-transparent' : 'border-white/20 bg-white/5'}`}>
+                  {config.grayscale && <span className="text-zinc-950 text-[10px] font-bold">✓</span>}
+                </div>
+                <input type="checkbox" className="hidden" checked={config.grayscale} onChange={(e) => handleCheckboxChange('grayscale', e.target.checked)} />
+                <span className="text-sm text-zinc-400">Grayscale</span>
               </label>
               
-              <label className="checkbox-label" style={{ flex: 1 }}>
-                <input 
-                  type="checkbox" 
-                  checked={config.deskew} 
-                  onChange={(e) => handleCheckboxChange('deskew', e.target.checked)} 
-                />
-                Thẳng chữ (Deskew)
+              <label className="flex items-center gap-2 cursor-pointer group flex-1">
+                <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${config.deskew ? 'bg-cyan-500 border-transparent' : 'border-white/20 bg-white/5'}`}>
+                  {config.deskew && <span className="text-white text-[10px] font-bold">✓</span>}
+                </div>
+                <input type="checkbox" className="hidden" checked={config.deskew} onChange={(e) => handleCheckboxChange('deskew', e.target.checked)} />
+                <span className="text-sm text-zinc-400">Deskew</span>
               </label>
             </div>
           </div>
 
           {(engine === 'paddleocr' || engine === 'vietocr') && config.grayscale && (
-            <div style={{ 
-              fontSize: '0.75rem', 
-              color: '#fbbf24', 
-              background: 'rgba(245, 158, 11, 0.12)', 
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              padding: '0.65rem',
-              borderRadius: '8px',
-              marginTop: '0.75rem',
-              lineHeight: '1.3'
-            }}>
-              ⚠️ <strong>Lưu ý:</strong> Paddle/VietOCR yêu cầu ảnh màu BGR 3 kênh. Hệ thống đã tự động đồng bộ lại số kênh màu đầu vào ở Backend để suy diễn chính xác.
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400/80 mt-2 leading-relaxed">
+              ⚠️ <strong>Notice:</strong> Paddle/VietOCR requires 3-channel BGR images. The backend has auto-converted this to prevent engine failures.
             </div>
           )}
 
         </div>
       </div>
+
     </div>
   );
 };

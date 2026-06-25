@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Crop } from 'lucide-react';
+import { RefreshCw, Crop, Image as ImageIcon } from 'lucide-react';
 
 const BoundingBoxViewer = ({ 
   originalImage, 
@@ -16,7 +16,6 @@ const BoundingBoxViewer = ({
   const [scale, setScale] = useState({ x: 1, y: 1 });
   const [imgDimensions, setImgDimensions] = useState({ width: 0, height: 0 });
 
-  // Recalculate scaling ratios when image loads or window resizes
   const updateScaleFactors = () => {
     if (imageRef.current) {
       const renderedWidth = imageRef.current.clientWidth;
@@ -37,67 +36,63 @@ const BoundingBoxViewer = ({
     }
   };
 
-  // Re-run scaling calculations on window resize
   useEffect(() => {
     window.addEventListener('resize', updateScaleFactors);
     return () => window.removeEventListener('resize', updateScaleFactors);
   }, []);
 
-  // Update scale factors when processed image or results change
   useEffect(() => {
-    // Small timeout to let browser layout finalize before measurement
     const timer = setTimeout(updateScaleFactors, 100);
     return () => clearTimeout(timer);
   }, [processedImage, results]);
 
   return (
-    <div className="viewer-card">
-      <div className="viewer-header">
-        <h3 className="viewer-title">
-          <Crop size={18} style={{ color: '#06b6d4' }} />
-          Trực Quan Hóa Khung Chữ (Interactive Canvas)
-        </h3>
+    <div className="flex flex-col gap-4 w-full h-full relative group">
+      
+      {/* Header Overlay */}
+      <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none">
+        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black/40 backdrop-blur-md border border-white/10 pointer-events-auto shadow-lg">
+          <Crop className="w-4 h-4 text-cyan-400" />
+          <h3 className="text-sm font-semibold text-white tracking-wide">Interactive Canvas</h3>
+        </div>
+        
         {results.length > 0 && (
-          <span className="badge-info">
-            Phát hiện {results.length} ký tự/từ
-          </span>
+          <div className="px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/30 backdrop-blur-md pointer-events-auto">
+            <span className="text-xs font-bold text-purple-300">
+              {results.length} blocks detected
+            </span>
+          </div>
         )}
       </div>
 
-      <div className="image-canvas-container" ref={containerRef}>
+      <div className="relative w-full h-full min-h-[600px] flex items-center justify-center rounded-2xl overflow-hidden" ref={containerRef}>
+        
         {/* Loading Overlay */}
         {loading && (
-          <div className="loading-spinner-overlay">
-            <div className="spinner"></div>
-            <p style={{ fontWeight: 600, color: '#a855f7' }}>Đang chạy AI nhận dạng chữ...</p>
+          <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center">
+            <RefreshCw className="w-12 h-12 text-purple-500 animate-spin mb-4" />
+            <p className="font-semibold text-purple-300 tracking-wide">Processing Document Matrix...</p>
           </div>
         )}
 
-        {/* Display Image (Always show processed or original fallback) */}
         {processedImage ? (
-          <div style={{ position: 'relative', display: 'inline-block' }}>
+          <div className="relative inline-block max-w-full max-h-full">
             <img 
               ref={imageRef}
               src={processedImage} 
               alt="OCR Work" 
               onLoad={updateScaleFactors}
-              style={{ display: 'block' }}
+              className="block max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl transition-transform duration-700 group-hover:scale-[1.01]"
             />
             
             {/* Active scanline animation if loading */}
-            {loading && <div className="scanline-effect"></div>}
+            {loading && <div className="scanline-effect rounded-xl overflow-hidden"></div>}
 
             {/* Bounding Box Markers layer */}
             {!loading && results && results.length > 0 && (
               <div 
-                className="bbox-overlay-layer" 
-                style={{ 
-                  position: 'absolute', 
-                  top: 0, 
-                  left: 0, 
-                  width: `${imgDimensions.width}px`, 
-                  height: `${imgDimensions.height}px` 
-                }}
+                className="absolute top-0 left-0 pointer-events-none" 
+                style={{ width: `${imgDimensions.width}px`, height: `${imgDimensions.height}px` }}
               >
                 {results.map((item, index) => {
                   const left = item.box.x * scale.x;
@@ -109,12 +104,17 @@ const BoundingBoxViewer = ({
                   return (
                     <div 
                       key={index}
-                      className={`bbox-marker ${isHighlighted ? 'active' : ''}`}
+                      className={`absolute pointer-events-auto cursor-pointer transition-all duration-300 ease-out border-2 ${
+                        isHighlighted 
+                          ? 'border-emerald-400 bg-emerald-400/20 z-20 shadow-[0_0_20px_rgba(16,185,129,0.5)] scale-110' 
+                          : 'border-purple-500/50 bg-purple-500/10 hover:border-cyan-400 hover:bg-cyan-400/20 hover:z-10 hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                      }`}
                       style={{
                         left: `${left}px`,
                         top: `${top}px`,
                         width: `${width}px`,
-                        height: `${height}px`
+                        height: `${height}px`,
+                        borderRadius: '4px'
                       }}
                       onMouseEnter={() => setActiveWordIndex(index)}
                       onMouseLeave={() => setActiveWordIndex(null)}
@@ -122,7 +122,7 @@ const BoundingBoxViewer = ({
                         e.stopPropagation();
                         setSelectedWordIndex && setSelectedWordIndex(index);
                       }}
-                      title={`Chữ: "${item.text}" | Độ tin cậy: ${item.confidence}%`}
+                      title={`Text: "${item.text}" | Confidence: ${item.confidence}%`}
                     />
                   );
                 })}
@@ -130,9 +130,9 @@ const BoundingBoxViewer = ({
             )}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', gap: '0.5rem' }}>
-            <ImageIcon size={40} style={{ opacity: 0.3 }} />
-            <p>Tải ảnh lên ở tab trên để xem trước OpenCV và chạy OCR</p>
+          <div className="flex flex-col items-center justify-center text-zinc-600 gap-4">
+            <ImageIcon className="w-16 h-16 opacity-20" />
+            <p className="text-sm font-medium">Awaiting document upload</p>
           </div>
         )}
       </div>
