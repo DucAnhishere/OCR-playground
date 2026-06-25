@@ -67,7 +67,7 @@ function App() {
 
   const [engine, setEngine] = useState('easyocr');
   const [languages, setLanguages] = useState(['vi', 'en']);
-  const [mergeBoxes, setMergeBoxes] = useState(true);
+  const [mergeBoxes, setMergeBoxes] = useState(false);
 
   // Results & stats
   const [results, setResults] = useState([]);
