@@ -11,9 +11,14 @@ import BoundingBoxViewer from './components/BoundingBoxViewer';
 
 gsap.registerPlugin(ScrollTrigger);
 
-const API_BASE = "http://127.0.0.1:8000/api";
+const DEFAULT_API_BASE = "http://127.0.0.1:8000/api";
 
 function App() {
+  // API URL state
+  const [apiUrl, setApiUrl] = useState(() => {
+    return localStorage.getItem('ocr_api_url') || DEFAULT_API_BASE;
+  });
+
   // Image states
   const [originalFile, setOriginalFile] = useState(null);
   const [originalImage, setOriginalImage] = useState(null);
@@ -77,9 +82,10 @@ function App() {
   const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
-    fetchBackendStatus();
-    fetchDefaultConfig();
-  }, []);
+    localStorage.setItem('ocr_api_url', apiUrl);
+    fetchBackendStatus(apiUrl);
+    fetchDefaultConfig(apiUrl);
+  }, [apiUrl]);
 
   useEffect(() => {
     if (originalImage) requestPreprocessingPreview(config);
@@ -95,9 +101,9 @@ function App() {
     }
   }, [activeWordIndex, selectedWordIndex]);
 
-  const fetchBackendStatus = async () => {
+  const fetchBackendStatus = async (url = apiUrl) => {
     try {
-      const res = await fetch(`${API_BASE}/status`);
+      const res = await fetch(`${url}/status`);
       if (res.ok) {
         const data = await res.json();
         setBackendStatus(data);
@@ -107,9 +113,9 @@ function App() {
     }
   };
 
-  const fetchDefaultConfig = async () => {
+  const fetchDefaultConfig = async (url = apiUrl) => {
     try {
-      const res = await fetch(`${API_BASE}/config/default`);
+      const res = await fetch(`${url}/config/default`);
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
@@ -142,7 +148,7 @@ function App() {
     if (!originalImage) return;
     const targetConfig = currentConfig || config;
     try {
-      const res = await fetch(`${API_BASE}/preprocess`, {
+      const res = await fetch(`${apiUrl}/preprocess`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: originalImage, config: targetConfig })
@@ -191,7 +197,7 @@ function App() {
       formData.append("languages", JSON.stringify(languages));
       formData.append("merge_boxes", mergeBoxes);
 
-      const res = await fetch(`${API_BASE}/ocr`, {
+      const res = await fetch(`${apiUrl}/ocr`, {
         method: "POST",
         body: formData
       });
@@ -412,6 +418,8 @@ function App() {
                 backendStatus={backendStatus}
                 mergeBoxes={mergeBoxes}
                 setMergeBoxes={setMergeBoxes}
+                apiUrl={apiUrl}
+                setApiUrl={setApiUrl}
               />
             </div>
           </div>

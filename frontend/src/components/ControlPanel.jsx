@@ -1,7 +1,24 @@
-import React from 'react';
-import { Sliders, Cpu } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sliders, Cpu, Globe } from 'lucide-react';
 
-const ControlPanel = ({ config, updateConfig, engine, setEngine, languages, setLanguages, backendStatus, mergeBoxes, setMergeBoxes }) => {
+const ControlPanel = ({ 
+  config, 
+  updateConfig, 
+  engine, 
+  setEngine, 
+  languages, 
+  setLanguages, 
+  backendStatus, 
+  mergeBoxes, 
+  setMergeBoxes,
+  apiUrl,
+  setApiUrl
+}) => {
+  const [tempUrl, setTempUrl] = useState(apiUrl);
+
+  useEffect(() => {
+    setTempUrl(apiUrl);
+  }, [apiUrl]);
   
   const handleSliderChange = (key, value) => {
     updateConfig({ [key]: value }, false); 
@@ -23,6 +40,51 @@ const ControlPanel = ({ config, updateConfig, engine, setEngine, languages, setL
 
   return (
     <div className="flex flex-col gap-6">
+      
+      {/* API Connection Card */}
+      <div className="flex flex-col gap-3 bg-white/[0.03] border border-white/5 rounded-2xl p-4 backdrop-blur-md relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-purple-500/20 transition-all duration-500"></div>
+        
+        <div className="flex justify-between items-center">
+          <h3 className="flex items-center gap-1.5 text-white font-semibold text-xs uppercase tracking-wider">
+            <Globe className="text-purple-400 w-4 h-4" />
+            API Connection
+          </h3>
+          
+          {/* Status Badge */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-semibold tracking-wide">
+            <span className={`w-1.5 h-1.5 rounded-full ${backendStatus ? 'bg-green-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
+            <span className={backendStatus ? 'text-green-400' : 'text-red-400'}>
+              {backendStatus ? 'Connected' : 'Offline'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-1">
+          <input 
+            type="text" 
+            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all"
+            placeholder="http://127.0.0.1:8000/api"
+            value={tempUrl}
+            onChange={(e) => setTempUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setApiUrl(tempUrl);
+              }
+            }}
+          />
+          <button 
+            onClick={() => setApiUrl(tempUrl)}
+            className="bg-white/10 hover:bg-white/20 border border-white/15 hover:border-white/20 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-all"
+          >
+            Connect
+          </button>
+        </div>
+        
+        <p className="text-[10px] text-zinc-500 font-medium">
+          Press <kbd className="bg-white/10 px-1 rounded font-mono text-[9px]">Enter</kbd> or click Connect to apply.
+        </p>
+      </div>
       
       {/* OCR Engine Selection */}
       <div className="flex flex-col gap-4">
