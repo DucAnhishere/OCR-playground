@@ -38,6 +38,7 @@ function App() {
 
   const debounceTimerRef = useRef(null);
   const containerRef = useRef(null);
+  const lastRunRef = useRef(null);
 
   const updateConfigAndPreview = (updatedFields, instant = false) => {
     setConfig(prev => {
@@ -159,6 +160,28 @@ function App() {
 
   const runFullOCR = async () => {
     if (!originalFile) return;
+
+    // Client-side Cache check
+    if (
+      lastRunRef.current &&
+      lastRunRef.current.file === originalFile &&
+      JSON.stringify(lastRunRef.current.config) === JSON.stringify(config) &&
+      lastRunRef.current.engine === engine &&
+      JSON.stringify(lastRunRef.current.languages) === JSON.stringify(languages) &&
+      lastRunRef.current.mergeBoxes === mergeBoxes
+    ) {
+      // Restore cached results instantly
+      setProcessedImage(lastRunRef.current.processedImage);
+      setResults(lastRunRef.current.results);
+      setSelectedWordIndex(null);
+      setDetectedTables(lastRunRef.current.detectedTables);
+      setExecutionStats({
+        ...lastRunRef.current.executionStats,
+        isCached: true
+      });
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
     try {
@@ -176,17 +199,35 @@ function App() {
       
       if (res.ok) {
         const data = await res.json();
-        setProcessedImage(data.processed_image_url || data.preprocessed_image);
-        setResults(data.results);
-        setSelectedWordIndex(null);
-        setDetectedTables(data.metadata.detected_tables || []);
-        setExecutionStats({
+        const finalImage = data.processed_image_url || data.preprocessed_image;
+        const finalResults = data.results;
+        const finalTables = data.metadata.detected_tables || [];
+        const finalStats = {
           time: data.execution_time_seconds,
           words: data.metadata.words_count,
           resolution: data.metadata.resolution,
           gpu: data.gpu_accelerated,
           skewAngle: data.metadata.deskew_angle
-        });
+        };
+
+        setProcessedImage(finalImage);
+        setResults(finalResults);
+        setSelectedWordIndex(null);
+        setDetectedTables(finalTables);
+        setExecutionStats(finalStats);
+
+        // Cache the successful run
+        lastRunRef.current = {
+          file: originalFile,
+          config: { ...config },
+          engine,
+          languages: [...languages],
+          mergeBoxes,
+          processedImage: finalImage,
+          results: finalResults,
+          detectedTables: finalTables,
+          executionStats: finalStats
+        };
       } else {
         const err = await res.json();
         setErrorMessage(err.detail || "Error running OCR.");
@@ -407,7 +448,9 @@ function App() {
               <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-6 grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-zinc-500 uppercase font-semibold">Time</p>
-                  <p className="text-xl font-bold text-purple-400 mt-1">{executionStats.time}s</p>
+                  <p className="text-xl font-bold text-purple-400 mt-1">
+                    {executionStats.isCached ? "Instant ⚡" : `${executionStats.time}s`}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-zinc-500 uppercase font-semibold">Words</p>
