@@ -83,10 +83,14 @@ def merge_adjacent_words(words: list[dict], gap_ratio: float = 1.5) -> list[dict
         current_word = line[0]
         for next_word in line[1:]:
             # Calculate the bounding box that encompasses both words
-            merged_x = current_word["x"]
-            merged_w = (next_word["x"] + next_word["w"]) - current_word["x"]
+            merged_x = min(current_word["x"], next_word["x"])
             merged_y = min(current_word["y"], next_word["y"])
-            merged_h = max(current_word["y"] + current_word["h"], next_word["y"] + next_word["h"]) - merged_y
+            
+            right_edge = max(current_word["x"] + current_word["w"], next_word["x"] + next_word["w"])
+            bottom_edge = max(current_word["y"] + current_word["h"], next_word["y"] + next_word["h"])
+            
+            merged_w = right_edge - merged_x
+            merged_h = bottom_edge - merged_y
             
             # Combine text and average the confidence score
             merged_text = current_word["text"] + " " + next_word["text"]
