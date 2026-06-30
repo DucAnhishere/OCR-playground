@@ -46,6 +46,9 @@ echo -e "${YELLOW}🐳 Starting build via Docker Compose...${NC}\n"
 docker compose build
 
 if [ $? -eq 0 ]; then
+    echo -e "\n${YELLOW}🧹 Cleaning up dangling Docker images...${NC}"
+    docker image prune -f
+    
     echo -e "\n${GREEN}=======================================================${NC}"
     echo -e "${GREEN}🎉 All microservices built successfully!${NC}"
     echo -e "   - ${BLUE}frontend${NC} (React/Vite)"
