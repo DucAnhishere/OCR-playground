@@ -1,4 +1,14 @@
 services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: ocr_jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
   nginx:
     image: nginx:latest
     container_name: ocr_nginx
@@ -26,6 +36,8 @@ services:
       - IMAGE_PROCESSOR_URL=http://image-processor:8004
       - PYTORCH_SERVICE_URL=http://ocr-pytorch:8002
       - PADDLE_SERVICE_URL=http://ocr-paddle:8003
+      - OTEL_SERVICE_NAME=orchestrator
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/ready"]
       interval: 15s
@@ -49,6 +61,8 @@ services:
       - "8004"
     environment:
       - PYTHONUNBUFFERED=1
+      - OTEL_SERVICE_NAME=image-processor
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/health/ready"]
       interval: 15s
@@ -86,6 +100,8 @@ services:
       - ./weights/torch:/root/.cache/torch
     environment:
       - PYTHONUNBUFFERED=1
+      - OTEL_SERVICE_NAME=ocr-pytorch
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health/ready"]
       interval: 15s
@@ -105,12 +121,16 @@ services:
       - ./weights/paddlex:/root/.paddlex
     environment:
       - PYTHONUNBUFFERED=1
+      - OTEL_SERVICE_NAME=ocr-paddle
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
       - FLAGS_use_mkldnn=0
       - FLAGS_fraction_of_cpu_memory_to_use=0.25
       - FLAGS_allocator_strategy=naive_best_fit
       - FLAGS_eager_delete_scope=1
       - FLAGS_eager_delete_tensor_gb=0.0
       - FLAGS_use_pinned_memory=0
+      # Fix Paddle 3.0b2 crash (ConvertPirAttribute2RuntimeAttribute bug with OneDNN)
+      - FLAGS_enable_pir_api=0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health/ready"]
       interval: 15s

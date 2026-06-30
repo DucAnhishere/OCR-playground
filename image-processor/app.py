@@ -2,7 +2,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import image_filters
 
+from shared.telemetry import init_telemetry, get_tracer
+
 app = FastAPI(title="Image Processor Service")
+init_telemetry(app)
+tracer = get_tracer("image_processor")
 
 class ProcessRequest(BaseModel):
     image: str # Base64 encoded image
@@ -23,13 +27,23 @@ def ready():
 @app.post("/api/process")
 async def process_image(request: ProcessRequest):
     try:
-        img = image_filters.decode_image(request.image)
-        processed, meta = image_filters.preprocess_pipeline(img, request.config)
-        processed_base64 = image_filters.encode_image(processed)
-        return {
-            "image": processed_base64,
-            "meta": meta
-        }
+        with tracer.start_as_current_span("image_preprocess_pipeline") as span:
+            with tracer.start_as_current_span("decode_image"):
+                img = image_filters.decode_image(request.image)
+
+            span.set_attribute("image.height", img.shape[0])
+            span.set_attribute("image.width", img.shape[1])
+
+            with tracer.start_as_current_span("preprocess_pipeline"):
+                processed, meta = image_filters.preprocess_pipeline(img, request.config)
+
+            with tracer.start_as_current_span("encode_image"):
+                processed_base64 = image_filters.encode_image(processed)
+
+            return {
+                "image": processed_base64,
+                "meta": meta
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

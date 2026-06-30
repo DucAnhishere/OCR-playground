@@ -6,6 +6,8 @@ os.environ["FLAGS_allocator_strategy"] = "naive_best_fit"
 os.environ["FLAGS_eager_delete_scope"] = "1"
 os.environ["FLAGS_eager_delete_tensor_gb"] = "0.0"
 os.environ["FLAGS_use_pinned_memory"] = "0"
+os.environ["FLAGS_enable_pir_api"] = "0"
+os.environ["FLAGS_use_mkldnn"] = "0"
 
 import cv2
 import numpy as np
@@ -17,9 +19,12 @@ from threading import RLock
 from paddleocr import PaddleOCR, PPStructureV3
 
 from shared.contracts import ModelSelectionRequest, ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
+from shared.telemetry import init_telemetry, get_tracer
 
 
 app = FastAPI(title="OCR Paddle Microservice")
+init_telemetry(app)
+tracer = get_tracer("ocr_paddle")
 
 # Caches to avoid reloading models on every request
 _paddle_ocr_cache = {}
@@ -107,6 +112,10 @@ def get_paddle_ocr(lang: str) -> PaddleOCR:
             use_textline_orientation=False,
             lang=lang,
             cpu_threads=2,
+            # TODO: Optimize PaddleOCR performance
+            # Downgrade paddlepaddle to 2.6.2 and paddleocr to 2.8.1
+            # so we can safely remove `enable_mkldnn=False` without crashing.
+            enable_mkldnn=False,
         )
     return _paddle_ocr_cache[lang]
 
@@ -123,6 +132,10 @@ def get_paddle_structure() -> PPStructureV3:
             use_seal_recognition=False,
             use_table_recognition=True,
             cpu_threads=2,
+            # TODO: Optimize PaddleOCR performance
+            # Downgrade paddlepaddle to 2.6.2 and paddleocr to 2.8.1
+            # so we can safely remove `enable_mkldnn=False` without crashing.
+            enable_mkldnn=False,
         )
     return _paddle_structure_cache["engine"]
 
@@ -230,95 +243,107 @@ def select_runtime_model(request: ModelSelectionRequest):
 @app.post("/api/ocr")
 def ocr(request: OCRServiceRequest):
     try:
-        img = decode_image(request.image)
-        
-        # PaddleOCR strictly expects 3-channel BGR
-        if len(img.shape) == 2:
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-            
-        word_results = []
-        preprocessed_image_base64 = None
-        detected_tables = []
-        
-        if request.engine in {'paddleocr', 'paddle_layout'}:
-            lang = 'vi' if 'vi' in request.languages else ('en' if 'en' in request.languages else (request.languages[0] if request.languages else 'en'))
-            ocr_instance = require_paddle_ocr(lang)
-            results = ocr_instance.predict(img, use_doc_unwarping=False, use_doc_orientation_classify=False)
-            
-            if results and len(results) > 0:
-                res_dict = results[0]
-                rec_texts = res_dict.get('rec_texts', [])
-                rec_scores = res_dict.get('rec_scores', [])
-                rec_boxes = res_dict.get('rec_boxes', [])
-                
-                for text, score, box in zip(rec_texts, rec_scores, rec_boxes):
-                    if len(box) >= 4:
-                        xmin, ymin, xmax, ymax = box[:4]
-                        x, y = int(xmin), int(ymin)
-                        w, h = int(xmax - xmin), int(ymax - ymin)
-                        text = text.strip()
-                        if not text:
-                            continue
-                        word_results.append({
-                            "text": text,
-                            "confidence": round(float(score) * 100, 2),
-                            "box": {"x": x, "y": y, "w": w, "h": h}
-                        })
-                        
-        elif request.engine == 'paddle_structure':
-            structure_instance = require_paddle_structure()
-            results = structure_instance.predict(img)
-            
-            if results and len(results) > 0:
-                page_res = results[0]
-                
-                # Extract text recognition results
-                overall_ocr = page_res.get('overall_ocr_res', {})
-                if overall_ocr:
-                    rec_texts = overall_ocr.get('rec_texts', [])
-                    rec_scores = overall_ocr.get('rec_scores', [])
-                    rec_boxes = overall_ocr.get('rec_boxes', [])
-                    
-                    for text, score, box in zip(rec_texts, rec_scores, rec_boxes):
-                        if len(box) >= 4:
-                            xmin, ymin, xmax, ymax = box[:4]
-                            x, y = int(xmin), int(ymin)
-                            w, h = int(xmax - xmin), int(ymax - ymin)
-                            text = text.strip()
-                            if not text:
-                                continue
-                            word_results.append({
-                                "text": text,
-                                "confidence": round(float(score) * 100, 2),
-                                "box": {"x": x, "y": y, "w": w, "h": h}
-                            })
-                
-                # Extract preprocessed/unwarped image
-                doc_prep = page_res.get('doc_preprocessor_res', {})
-                if doc_prep and 'output_img' in doc_prep:
-                    output_img = doc_prep['output_img']
-                    if output_img is not None:
-                        preprocessed_image_base64 = encode_image(output_img)
-                        
-                # Extract tables
-                tables = page_res.get('table_res_list', [])
-                if tables:
-                    for idx, table in enumerate(tables):
-                        html = table.get('pred_html', table.get('html', ''))
-                        detected_tables.append({
-                            "id": idx + 1,
-                            "html": html
-                        })
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported engine in Paddle microservice: {request.engine}")
-            
-        return OCRServiceResponse(
-            words=word_results,
-            preprocessed_image=preprocessed_image_base64,
-            detected_tables=detected_tables,
-            gpu_accelerated=False,
-        )
-        
+        with tracer.start_as_current_span("paddle_ocr_request") as span:
+            span.set_attribute("ocr.engine", request.engine)
+            span.set_attribute("ocr.languages", str(request.languages))
+
+            with tracer.start_as_current_span("decode_image"):
+                img = decode_image(request.image)
+
+            # PaddleOCR strictly expects 3-channel BGR
+            if len(img.shape) == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+            word_results = []
+            preprocessed_image_base64 = None
+            detected_tables = []
+
+            if request.engine in {'paddleocr', 'paddle_layout'}:
+                lang = 'vi' if 'vi' in request.languages else ('en' if 'en' in request.languages else (request.languages[0] if request.languages else 'en'))
+                ocr_instance = require_paddle_ocr(lang)
+                with tracer.start_as_current_span("paddle_inference") as inf_span:
+                    inf_span.set_attribute("ocr.lang", lang)
+                    results = ocr_instance.predict(img, use_doc_unwarping=False, use_doc_orientation_classify=False)
+
+                with tracer.start_as_current_span("format_results"):
+                    if results and len(results) > 0:
+                        res_dict = results[0]
+                        rec_texts = res_dict.get('rec_texts', [])
+                        rec_scores = res_dict.get('rec_scores', [])
+                        rec_boxes = res_dict.get('rec_boxes', [])
+
+                        for text, score, box in zip(rec_texts, rec_scores, rec_boxes):
+                            if len(box) >= 4:
+                                xmin, ymin, xmax, ymax = box[:4]
+                                x, y = int(xmin), int(ymin)
+                                w, h = int(xmax - xmin), int(ymax - ymin)
+                                text = text.strip()
+                                if not text:
+                                    continue
+                                word_results.append({
+                                    "text": text,
+                                    "confidence": round(float(score) * 100, 2),
+                                    "box": {"x": x, "y": y, "w": w, "h": h}
+                                })
+
+            elif request.engine == 'paddle_structure':
+                structure_instance = require_paddle_structure()
+                with tracer.start_as_current_span("paddle_structure_inference"):
+                    results = structure_instance.predict(img)
+
+                with tracer.start_as_current_span("format_results"):
+                    if results and len(results) > 0:
+                        page_res = results[0]
+
+                        # Extract text recognition results
+                        overall_ocr = page_res.get('overall_ocr_res', {})
+                        if overall_ocr:
+                            rec_texts = overall_ocr.get('rec_texts', [])
+                            rec_scores = overall_ocr.get('rec_scores', [])
+                            rec_boxes = overall_ocr.get('rec_boxes', [])
+
+                            for text, score, box in zip(rec_texts, rec_scores, rec_boxes):
+                                if len(box) >= 4:
+                                    xmin, ymin, xmax, ymax = box[:4]
+                                    x, y = int(xmin), int(ymin)
+                                    w, h = int(xmax - xmin), int(ymax - ymin)
+                                    text = text.strip()
+                                    if not text:
+                                        continue
+                                    word_results.append({
+                                        "text": text,
+                                        "confidence": round(float(score) * 100, 2),
+                                        "box": {"x": x, "y": y, "w": w, "h": h}
+                                    })
+
+                        # Extract preprocessed/unwarped image
+                        doc_prep = page_res.get('doc_preprocessor_res', {})
+                        if doc_prep and 'output_img' in doc_prep:
+                            output_img = doc_prep['output_img']
+                            if output_img is not None:
+                                preprocessed_image_base64 = encode_image(output_img)
+
+                        # Extract tables
+                        tables = page_res.get('table_res_list', [])
+                        if tables:
+                            for idx, table in enumerate(tables):
+                                html = table.get('pred_html', table.get('html', ''))
+                                detected_tables.append({
+                                    "id": idx + 1,
+                                    "html": html
+                                })
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported engine in Paddle microservice: {request.engine}")
+
+            span.set_attribute("ocr.words_found", len(word_results))
+
+            return OCRServiceResponse(
+                words=word_results,
+                preprocessed_image=preprocessed_image_base64,
+                detected_tables=detected_tables,
+                gpu_accelerated=False,
+            )
+
     except HTTPException:
         raise
     except Exception as e:

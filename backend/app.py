@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from const import CORS_ORIGINS, STORAGE_REQUIRED
 from services.supabase_service import is_storage_configured
 from routers import system, ocr
+from shared.telemetry import init_telemetry
 
 
 @asynccontextmanager
@@ -30,6 +31,9 @@ app = FastAPI(
     description="FastAPI orchestrator that routes requests to image processor and OCR microservices.",
     lifespan=lifespan,
 )
+
+# Initialize OpenTelemetry (auto-instruments all FastAPI routes + httpx client)
+init_telemetry(app)
 
 # Enable CORS for frontend integration
 allow_all = "*" in CORS_ORIGINS

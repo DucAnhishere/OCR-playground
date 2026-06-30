@@ -22,8 +22,14 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # 2. Spin up containers in detached mode
-echo -e "${YELLOW}🐳 Starting all containers in background (detached)...${NC}"
-docker compose up -d
+echo -e "${CYAN}🔍 Checking for NVIDIA GPU...${NC}"
+if command -v nvidia-smi &> /dev/null; then
+    echo -e "${GREEN}✅ NVIDIA GPU detected! Enabling GPU support...${NC}"
+    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+else
+    echo -e "${YELLOW}⚠️ No NVIDIA GPU found. Falling back to CPU...${NC}"
+    docker compose up -d
+fi
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Error: Failed to start docker containers.${NC}"

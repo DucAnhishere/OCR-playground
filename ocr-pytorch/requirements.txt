@@ -8,3 +8,8 @@ numpy>=1.24.0,<2.0.0
 opencv-python-headless==4.9.0.80
 httpx==0.28.1
 python-dotenv==1.0.1
+# OpenTelemetry - Distributed tracing
+opentelemetry-api>=1.25.0
+opentelemetry-sdk>=1.25.0
+opentelemetry-exporter-otlp-proto-grpc>=1.25.0
+opentelemetry-instrumentation-fastapi>=0.46b0

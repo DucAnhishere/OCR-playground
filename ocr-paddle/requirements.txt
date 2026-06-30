@@ -5,3 +5,8 @@ paddleocr>=3.0.0
 paddlex[ocr]>=3.5.0
 numpy>=1.24.0,<2.0.0
 opencv-python-headless==4.9.0.80
+# OpenTelemetry - Distributed tracing
+opentelemetry-api>=1.25.0
+opentelemetry-sdk>=1.25.0
+opentelemetry-exporter-otlp-proto-grpc>=1.25.0
+opentelemetry-instrumentation-fastapi>=0.46b0

@@ -10,9 +10,11 @@ from const import PADDLE_SERVICE_URL, PYTORCH_SERVICE_URL, IMAGE_PROCESSOR_URL, 
 from exceptions import ImageProcessorError, OCRServiceError, UnsupportedEngineError
 from services.supabase_service import is_storage_configured, upload_to_supabase
 from shared.contracts import ModelSelectionRequest, ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
+from shared.telemetry import get_tracer
 from utils.ocr_utils import merge_adjacent_words
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer("orchestrator.pipeline")
 
 
 _MODEL_SELECTION_TARGETS = {
@@ -243,71 +245,86 @@ async def execute_ocr_pipeline(
     if engine not in ENGINE_ROUTING_MAP:
         raise UnsupportedEngineError(engine=engine)
 
-    original_base64 = f"data:{content_type};base64," + base64.b64encode(file_bytes).decode('utf-8')
-    ext = filename.rsplit('.', 1)[-1] if '.' in filename else 'jpg'
+    with tracer.start_as_current_span("ocr_pipeline") as pipeline_span:
+        pipeline_span.set_attribute("ocr.engine", engine)
+        pipeline_span.set_attribute("ocr.filename", filename)
+        pipeline_span.set_attribute("ocr.merge_boxes", merge_boxes)
 
-    # Upload original image to Supabase as a best-effort side effect.
-    orig_filename = f"original_{uuid.uuid4().hex}.{ext}"
-    original_url, original_storage_status = await upload_best_effort(
-        client, file_bytes, orig_filename, content_type, warnings
-    )
+        original_base64 = f"data:{content_type};base64," + base64.b64encode(file_bytes).decode('utf-8')
+        ext = filename.rsplit('.', 1)[-1] if '.' in filename else 'jpg'
 
-    # 1. Route to Image Processor
-    proc_data = await process_image(client, original_base64, config_dict)
-    processed_base64 = proc_data["image"]
-    meta = proc_data["meta"]
+        # Upload original image to Supabase as a best-effort side effect.
+        with tracer.start_as_current_span("upload_original"):
+            orig_filename = f"original_{uuid.uuid4().hex}.{ext}"
+            original_url, original_storage_status = await upload_best_effort(
+                client, file_bytes, orig_filename, content_type, warnings
+            )
 
-    # Ensure processed image has data URI prefix for frontend display
-    if not processed_base64.startswith("data:"):
-        processed_base64 = f"data:image/jpeg;base64,{processed_base64}"
+        # 1. Route to Image Processor
+        with tracer.start_as_current_span("preprocess_image"):
+            proc_data = await process_image(client, original_base64, config_dict)
+        processed_base64 = proc_data["image"]
+        meta = proc_data["meta"]
 
-    # 2. Run the OCR workflow. BFF owns multi-service orchestration.
-    resp_data = await run_ocr_workflow(client, engine, processed_base64, languages_list)
+        # Ensure processed image has data URI prefix for frontend display
+        if not processed_base64.startswith("data:"):
+            processed_base64 = f"data:image/jpeg;base64,{processed_base64}"
 
-    words = [word.model_dump() for word in resp_data.words]
-    preprocessed_image = resp_data.preprocessed_image
-    detected_tables = [table.model_dump() for table in resp_data.detected_tables]
-    warnings.extend(resp_data.warnings)
+        # 2. Run the OCR workflow. BFF owns multi-service orchestration.
+        with tracer.start_as_current_span("run_ocr_workflow") as ocr_span:
+            ocr_span.set_attribute("ocr.engine", engine)
+            resp_data = await run_ocr_workflow(client, engine, processed_base64, languages_list)
 
-    # Extract real GPU status from the OCR service response
-    gpu_active = resp_data.gpu_accelerated
+        words = [word.model_dump() for word in resp_data.words]
+        preprocessed_image = resp_data.preprocessed_image
+        detected_tables = [table.model_dump() for table in resp_data.detected_tables]
+        warnings.extend(resp_data.warnings)
 
-    elapsed = time.time() - start_time
+        # Extract real GPU status from the OCR service response
+        gpu_active = resp_data.gpu_accelerated
 
-    # Decide which image to use for the frontend bounding box display
-    if preprocessed_image:
-        final_display_base64 = preprocessed_image
-        final_filename = f"unwarped_{uuid.uuid4().hex}.jpg"
-    else:
-        final_display_base64 = processed_base64
-        final_filename = f"processed_{uuid.uuid4().hex}.jpg"
-        
-    # Upload the chosen final image to Supabase as a best-effort side effect.
-    final_bytes = base64.b64decode(final_display_base64.split(",", 1)[-1])
-    processed_url, processed_storage_status = await upload_best_effort(
-        client, final_bytes, final_filename, "image/jpeg", warnings
-    )
+        elapsed = time.time() - start_time
 
-    # 3. Perform box merging
-    if merge_boxes:
-        words = merge_adjacent_words(words)
+        # Decide which image to use for the frontend bounding box display
+        if preprocessed_image:
+            final_display_base64 = preprocessed_image
+            final_filename = f"unwarped_{uuid.uuid4().hex}.jpg"
+        else:
+            final_display_base64 = processed_base64
+            final_filename = f"processed_{uuid.uuid4().hex}.jpg"
 
-    return {
-        "success": True,
-        "preprocessed_image": final_display_base64,  # Legacy fallback for frontend
-        "original_image_url": original_url,
-        "processed_image_url": processed_url,
-        "results": words,
-        "metadata": {
-            **meta,
-            "words_count": len(words),
-            "detected_tables": detected_tables,
-            "storage_status": "uploaded"
-            if original_storage_status == "uploaded" and processed_storage_status == "uploaded"
-            else ("disabled" if "disabled" in {original_storage_status, processed_storage_status} else "failed"),
-        },
-        "engine": engine,
-        "execution_time_seconds": round(elapsed, 3),
-        "gpu_accelerated": gpu_active,
-        "warnings": warnings,
-    }
+        # Upload the chosen final image to Supabase as a best-effort side effect.
+        with tracer.start_as_current_span("upload_processed"):
+            final_bytes = base64.b64decode(final_display_base64.split(",", 1)[-1])
+            processed_url, processed_storage_status = await upload_best_effort(
+                client, final_bytes, final_filename, "image/jpeg", warnings
+            )
+
+        # 3. Perform box merging
+        with tracer.start_as_current_span("merge_boxes") as merge_span:
+            if merge_boxes:
+                words = merge_adjacent_words(words)
+            merge_span.set_attribute("ocr.words_count", len(words))
+
+        pipeline_span.set_attribute("ocr.total_seconds", round(elapsed, 3))
+        pipeline_span.set_attribute("ocr.gpu_accelerated", gpu_active)
+
+        return {
+            "success": True,
+            "preprocessed_image": final_display_base64,  # Legacy fallback for frontend
+            "original_image_url": original_url,
+            "processed_image_url": processed_url,
+            "results": words,
+            "metadata": {
+                **meta,
+                "words_count": len(words),
+                "detected_tables": detected_tables,
+                "storage_status": "uploaded"
+                if original_storage_status == "uploaded" and processed_storage_status == "uploaded"
+                else ("disabled" if "disabled" in {original_storage_status, processed_storage_status} else "failed"),
+            },
+            "engine": engine,
+            "execution_time_seconds": round(elapsed, 3),
+            "gpu_accelerated": gpu_active,
+            "warnings": warnings,
+        }

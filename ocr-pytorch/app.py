@@ -12,12 +12,15 @@ from vietocr.tool.predictor import Predictor
 from vietocr.tool.config import Cfg
 
 from shared.contracts import ModelSelectionRequest, ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
+from shared.telemetry import init_telemetry, get_tracer
 from const import (
     VIETOCR_WEIGHTS_PATH,
     VIETOCR_CONFIG_NAME
 )
 
 app = FastAPI(title="OCR PyTorch Microservice (EasyOCR & VietOCR)")
+init_telemetry(app)
+tracer = get_tracer("ocr_pytorch")
 
 # Caches to avoid reloading weights/models on every request
 _easyocr_readers_cache = {}
@@ -201,94 +204,106 @@ def select_runtime_model(request: ModelSelectionRequest):
 @app.post("/api/ocr")
 def ocr(request: OCRServiceRequest):
     try:
-        if request.engine == 'easyocr':
-            # --- Run EasyOCR ---
-            img = decode_image(request.image)
-            reader = require_easyocr_reader(request.languages)
-            results = reader.readtext(img)
-            
-            word_results = []
-            for box, text, confidence in results:
-                x_coords = [p[0] for p in box]
-                y_coords = [p[1] for p in box]
-                
-                x = int(min(x_coords))
-                y = int(min(y_coords))
-                w = int(max(x_coords) - x)
-                h = int(max(y_coords) - y)
-                
-                text = text.strip()
-                if not text:
-                    continue
-                    
-                word_results.append({
-                    "text": text,
-                    "confidence": round(float(confidence) * 100, 2),
-                    "box": {"x": x, "y": y, "w": w, "h": h}
-                })
-                
-            return OCRServiceResponse(
-                words=word_results,
-                gpu_accelerated=torch.backends.mps.is_available() or torch.cuda.is_available(),
-            )
-            
-        elif request.engine == 'vietocr':
-            if not request.layout_words:
-                raise HTTPException(
-                    status_code=400,
-                    detail="VietOCR requires layout_words supplied by the orchestrator",
+        with tracer.start_as_current_span("pytorch_ocr_request") as span:
+            span.set_attribute("ocr.engine", request.engine)
+            span.set_attribute("ocr.languages", str(request.languages))
+
+            if request.engine == 'easyocr':
+                # --- Run EasyOCR ---
+                with tracer.start_as_current_span("decode_image"):
+                    img = decode_image(request.image)
+                reader = require_easyocr_reader(request.languages)
+                with tracer.start_as_current_span("easyocr_inference"):
+                    results = reader.readtext(img)
+
+                word_results = []
+                with tracer.start_as_current_span("format_results"):
+                    for box, text, confidence in results:
+                        x_coords = [p[0] for p in box]
+                        y_coords = [p[1] for p in box]
+
+                        x = int(min(x_coords))
+                        y = int(min(y_coords))
+                        w = int(max(x_coords) - x)
+                        h = int(max(y_coords) - y)
+
+                        text = text.strip()
+                        if not text:
+                            continue
+
+                        word_results.append({
+                            "text": text,
+                            "confidence": round(float(confidence) * 100, 2),
+                            "box": {"x": x, "y": y, "w": w, "h": h}
+                        })
+
+                span.set_attribute("ocr.words_found", len(word_results))
+                return OCRServiceResponse(
+                    words=word_results,
+                    gpu_accelerated=torch.backends.mps.is_available() or torch.cuda.is_available(),
                 )
 
-            crop_src_img = decode_image(request.image)
-                
-            h_img, w_img = crop_src_img.shape[:2]
-            predictor = require_vietocr_predictor()
-            word_results = []
-            
-            # Crop each bounding box and run VietOCR
-            for w_item in request.layout_words:
-                box = w_item.box
-                x, y, w, h = box.x, box.y, box.w, box.h
-                
-                pad = 2
-                x1 = max(0, x - pad)
-                y1 = max(0, y - pad)
-                x2 = min(w_img, x + w + pad)
-                y2 = min(h_img, y + h + pad)
-                
-                crop_w = x2 - x1
-                crop_h = y2 - y1
-                
-                if crop_w <= 0 or crop_h <= 0:
-                    continue
-                    
-                cropped_bgr = crop_src_img[y1:y2, x1:x2]
-                cropped_rgb = cv2.cvtColor(cropped_bgr, cv2.COLOR_BGR2RGB)
-                pil_img = Image.fromarray(cropped_rgb)
-                
-                try:
-                    recognized_text = predictor.predict(pil_img)
-                    recognized_text = recognized_text.strip()
-                    
-                    if not recognized_text:
-                        continue
-                        
-                    word_results.append({
-                        "text": recognized_text,
-                        "confidence": w_item.confidence,
-                        "box": {"x": x1, "y": y1, "w": crop_w, "h": crop_h}
-                    })
-                except Exception as ex:
-                    print(f"[VietOCR] Text recognition failed for crop {x1,y1,x2,y2}: {ex}")
-                    
-            return OCRServiceResponse(
-                words=word_results,
-                gpu_accelerated=torch.backends.mps.is_available() or torch.cuda.is_available(),
-            )
-            
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported engine in PyTorch microservice: {request.engine}")
-            
+            elif request.engine == 'vietocr':
+                if not request.layout_words:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="VietOCR requires layout_words supplied by the orchestrator",
+                    )
+
+                with tracer.start_as_current_span("decode_image"):
+                    crop_src_img = decode_image(request.image)
+
+                h_img, w_img = crop_src_img.shape[:2]
+                predictor = require_vietocr_predictor()
+                word_results = []
+
+                # Crop each bounding box and run VietOCR
+                with tracer.start_as_current_span("vietocr_inference") as viet_span:
+                    viet_span.set_attribute("ocr.crops_count", len(request.layout_words))
+                    for w_item in request.layout_words:
+                        box = w_item.box
+                        x, y, w, h = box.x, box.y, box.w, box.h
+
+                        pad = 2
+                        x1 = max(0, x - pad)
+                        y1 = max(0, y - pad)
+                        x2 = min(w_img, x + w + pad)
+                        y2 = min(h_img, y + h + pad)
+
+                        crop_w = x2 - x1
+                        crop_h = y2 - y1
+
+                        if crop_w <= 0 or crop_h <= 0:
+                            continue
+
+                        cropped_bgr = crop_src_img[y1:y2, x1:x2]
+                        cropped_rgb = cv2.cvtColor(cropped_bgr, cv2.COLOR_BGR2RGB)
+                        pil_img = Image.fromarray(cropped_rgb)
+
+                        try:
+                            recognized_text = predictor.predict(pil_img)
+                            recognized_text = recognized_text.strip()
+
+                            if not recognized_text:
+                                continue
+
+                            word_results.append({
+                                "text": recognized_text,
+                                "confidence": w_item.confidence,
+                                "box": {"x": x1, "y": y1, "w": crop_w, "h": crop_h}
+                            })
+                        except Exception as ex:
+                            print(f"[VietOCR] Text recognition failed for crop {x1,y1,x2,y2}: {ex}")
+
+                span.set_attribute("ocr.words_found", len(word_results))
+                return OCRServiceResponse(
+                    words=word_results,
+                    gpu_accelerated=torch.backends.mps.is_available() or torch.cuda.is_available(),
+                )
+
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported engine in PyTorch microservice: {request.engine}")
+
     except HTTPException:
         raise
     except Exception as e:
