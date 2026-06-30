@@ -22,10 +22,8 @@ graph TD
     BFF <--> |Upload Original & Processed Images| Supabase[(Supabase Storage)]
     
     BFF <--> |1. Preprocess Image| IMG[Image Processor Service<br/>OpenCV]
-    BFF <--> |2. EasyOCR / VietOCR| PY[PyTorch OCR Microservice<br/>Port 8002]
-    BFF <--> |2. PaddleOCR / PP-Structure| PD[Paddle OCR Microservice<br/>Port 8003]
-    
-    PY -.-> |VietOCR: 1. Request Layout / BBoxes| PD
+    BFF <--> |2. EasyOCR & VietOCR Recog| PY[PyTorch OCR Microservice<br/>Port 8002]
+    BFF <--> |2. PaddleOCR & PP-Structure Layout| PD[Paddle OCR Microservice<br/>Port 8003]
     
     subgraph PyTorch [PyTorch Container]
         PY
@@ -63,7 +61,7 @@ graph TD
 ```
 
 ### 🔄 VietOCR Hybrid Processing Pipeline
-Because VietOCR excels at Vietnamese handwriting/printed line-level text recognition but lacks a layout detection layout module of its own, the stack implements a **hybrid cross-service orchestration flow**:
+Because VietOCR excels at Vietnamese handwriting/printed line-level text recognition but lacks a layout detection module of its own, the stack implements a **BFF-driven hybrid cross-service orchestration flow**:
 
 ```mermaid
 sequenceDiagram
@@ -71,16 +69,15 @@ sequenceDiagram
     actor User as User / Browser
     participant FE as Frontend (React)
     participant BFF as Orchestrator (BFF)
-    participant PY as PyTorch Service (VietOCR)
     participant PD as Paddle Service (PP-Structure)
+    participant PY as PyTorch Service (VietOCR)
     
     User->>FE: Upload image & trigger OCR
     FE->>BFF: POST /api/ocr (engine="vietocr")
-    BFF->>PY: POST /api/ocr (engine="vietocr")
-    Note over PY: Needs layout coordinates for cropping
-    PY->>PD: POST /api/ocr (engine="paddle_structure")
+    BFF->>PD: POST /api/ocr (engine="paddle_structure")
     Note over PD: Runs PP-StructureV3 (Layout Det)
-    PD-->>PY: Return bounding boxes & unwarped image
+    PD-->>BFF: Return bounding boxes & unwarped image
+    BFF->>PY: POST /api/ocr (engine="vietocr", layout_words=...)
     Note over PY: Crops image per box
     Note over PY: Runs VietOCR text recognition on crops
     PY-->>BFF: Return text & coordinates
@@ -236,10 +233,10 @@ The Orchestrator utilizes the **Strategy Pattern** to load and route OCR request
 
 1. **Deploy your OCR microservice** (or install dependencies in `ocr-pytorch` or `ocr-paddle`).
 2. Implement your endpoint handling logic inside the corresponding microservice's `app.py`.
-3. In [`backend/app.py`](file:///Users/testadmin/Desktop/Desktop-Mac/ocr-playground/backend/app.py), map the new engine name to your microservice URL:
+3. In [`backend/const.py`](file:///Users/testadmin/Desktop/Desktop-Mac/ocr-playground/backend/const.py), map the new engine name to your microservice URL:
 
 ```python
-# In backend/app.py
+# In backend/const.py
 ENGINE_ROUTING_MAP = {
     'custom_ocr': "http://your-new-service:8080",
     # ...
