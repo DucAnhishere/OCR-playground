@@ -87,13 +87,14 @@ fi
 
 echo -e "\n${GREEN}=======================================================${NC}"
 echo -e "${GREEN}🎉 Deployment finished successfully!${NC}"
-echo -e "   - ${BLUE}Frontend UI${NC}: http://localhost:5173"
-echo -e "   - ${BLUE}Gateway API${NC}: http://localhost:8000"
+echo -e "   - ${BLUE}Frontend UI${NC}: http://localhost:8000"
+echo -e "   - ${BLUE}Gateway API${NC}: http://localhost:8000/api"
 if [ "$TUNNEL_RUNNING" = true ]; then
     echo -e "   - ${BLUE}Public API (Tunnel)${NC}: ${GREEN}${PUBLIC_API_URL}${NC}"
     echo -e "     👉 Copy link trên dán vào ô 'API Connection' ở trang Vercel!"
 fi
 echo -e "   - ${BLUE}Gateway Docs${NC}: http://localhost:8000/docs"
+echo -e "   - ${BLUE}Gateway Health${NC}: http://localhost:8000/api/health/ready"
 echo -e "\n🛠️  Useful commands:"
 echo -e "   - View docker logs:   ${YELLOW}docker compose logs -f${NC}"
 echo -e "   - View tunnel logs:   ${YELLOW}tail -f cloudflare_tunnel.log${NC}"

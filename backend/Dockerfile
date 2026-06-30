@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ==========================================
@@ -35,7 +35,8 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY . .
+COPY backend/ .
+COPY shared/ ./shared/
 
 EXPOSE 8000
 

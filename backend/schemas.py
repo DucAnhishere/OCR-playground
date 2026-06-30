@@ -1,5 +1,8 @@
-from pydantic import BaseModel, Field
 from typing import List, Dict, Any
+
+from pydantic import BaseModel, Field
+
+from shared.contracts import OCRWordBox, OCRWordResult
 
 # --- Request/Input Schemas ---
 
@@ -32,7 +35,7 @@ class PreprocessRequest(BaseModel):
 # --- Response/Output Schemas ---
 
 class StatusResponse(BaseModel):
-    status: str = Field(..., description="Backend system status (e.g. 'online')")
+    status: str = Field(..., description="Aggregated backend system status: online, degraded, or offline")
     gpu_acceleration: bool = Field(..., description="True if PyTorch has CUDA or MPS acceleration active")
     gpu_type: str = Field(..., description="GPU Type ('Apple Silicon (MPS)', 'NVIDIA (CUDA)', 'None')")
     paddleocr_installed: bool = Field(..., description="True if PaddleOCR is installed and available")
@@ -47,17 +50,6 @@ class PreprocessResponse(BaseModel):
     processed_image: str = Field(..., description="Base64 encoded processed image")
     metadata: Dict[str, Any] = Field(..., description="Metadata after preprocessing (e.g., deskew angle)")
 
-class OCRWordBox(BaseModel):
-    x: int = Field(..., description="Bounding box X coordinate (top-left)")
-    y: int = Field(..., description="Bounding box Y coordinate (top-left)")
-    w: int = Field(..., description="Bounding box width")
-    h: int = Field(..., description="Bounding box height")
-
-class OCRWordResult(BaseModel):
-    text: str = Field(..., description="Extracted word text")
-    confidence: float = Field(..., description="Confidence score from 0 to 100")
-    box: OCRWordBox = Field(..., description="Bounding box of the word")
-
 class OCRResponse(BaseModel):
     success: bool = Field(True, description="True if OCR operation succeeded")
     preprocessed_image: str = Field(None, description="Base64 encoded preprocessed image (legacy/fallback)")
@@ -68,3 +60,4 @@ class OCRResponse(BaseModel):
     engine: str = Field(..., description="OCR Engine used ('easyocr', 'vietocr', 'paddleocr', 'paddle_structure')")
     execution_time_seconds: float = Field(..., description="Duration of OCR execution in seconds")
     gpu_accelerated: bool = Field(..., description="True if GPU acceleration was active during OCR")
+    warnings: List[str] = Field(default_factory=list, description="Non-fatal warnings emitted during OCR")

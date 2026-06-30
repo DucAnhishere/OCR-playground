@@ -12,6 +12,14 @@ class ProcessRequest(BaseModel):
 def health_check():
     return {"status": "healthy"}
 
+@app.get("/health/live")
+def live():
+    return {"status": "healthy"}
+
+@app.get("/health/ready")
+def ready():
+    return {"status": "ready", "details": {"service": "image-processor"}}
+
 @app.post("/api/process")
 async def process_image(request: ProcessRequest):
     try:

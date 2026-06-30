@@ -1,0 +1,32 @@
+services:
+  orchestrator:
+    volumes:
+      - ./backend:/app
+      - ./shared:/app/shared:ro
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
+  image-processor:
+    volumes:
+      - ./image-processor:/app
+      - ./shared:/app/shared:ro
+    command: uvicorn app:app --host 0.0.0.0 --port 8004 --reload
+
+  frontend:
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  ocr-pytorch:
+    volumes:
+      - ./ocr-pytorch:/app
+      - ./shared:/app/shared:ro
+      - ./weights/easyocr:/root/.EasyOCR
+      - ./weights/vietocr:/root/.vietocr
+      - ./weights/torch:/root/.cache/torch
+
+  ocr-paddle:
+    volumes:
+      - ./ocr-paddle:/app
+      - ./shared:/app/shared:ro
+      - ./weights/paddleocr:/root/.paddleocr
+      - ./weights/paddlex:/root/.paddlex

@@ -7,7 +7,6 @@ from services.orchestrator_service import process_image, execute_ocr_pipeline
 from exceptions import (
     ImageProcessorError,
     OCRServiceError,
-    SupabaseUploadError,
     UnsupportedEngineError,
 )
 
@@ -61,9 +60,6 @@ async def api_ocr(
     except UnsupportedEngineError as e:
         logger.warning("Unsupported OCR engine requested: %s", e.engine)
         raise HTTPException(status_code=400, detail=str(e))
-    except SupabaseUploadError as e:
-        logger.error("Supabase upload error: %s", e)
-        raise HTTPException(status_code=502, detail=str(e))
     except (ImageProcessorError, OCRServiceError) as e:
         logger.error("Upstream service error: %s", e)
         raise HTTPException(status_code=502, detail=str(e))
@@ -73,4 +69,3 @@ async def api_ocr(
             status_code=500,
             detail=f"OCR Orchestrator execution failed: {str(e)}"
         )
-

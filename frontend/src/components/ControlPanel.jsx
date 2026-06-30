@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Sliders, Cpu, Globe } from 'lucide-react';
 
 const ControlPanel = ({ 
@@ -15,10 +15,6 @@ const ControlPanel = ({
   setApiUrl
 }) => {
   const [tempUrl, setTempUrl] = useState(apiUrl);
-
-  useEffect(() => {
-    setTempUrl(apiUrl);
-  }, [apiUrl]);
   
   const handleSliderChange = (key, value) => {
     updateConfig({ [key]: value }, false); 

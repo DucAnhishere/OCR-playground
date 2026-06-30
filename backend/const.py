@@ -20,3 +20,18 @@ ENGINE_ROUTING_MAP = {
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "ocr-images")
+STORAGE_REQUIRED = os.getenv("STORAGE_REQUIRED", "false").lower() == "true"
+
+# Runtime behavior
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
+PREPROCESS_TIMEOUT_SECONDS = float(os.getenv("PREPROCESS_TIMEOUT_SECONDS", "60"))
+OCR_TIMEOUT_SECONDS = float(os.getenv("OCR_TIMEOUT_SECONDS", "180"))
+STORAGE_TIMEOUT_SECONDS = float(os.getenv("STORAGE_TIMEOUT_SECONDS", "30"))

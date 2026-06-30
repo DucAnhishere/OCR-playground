@@ -4,6 +4,8 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from const import CORS_ORIGINS, STORAGE_REQUIRED
+from services.supabase_service import is_storage_configured
 from routers import system, ocr
 
 
@@ -14,7 +16,10 @@ async def lifespan(app: FastAPI):
     The shared httpx.AsyncClient is created once on startup and closed on shutdown,
     enabling connection pooling across all requests.
     """
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    if STORAGE_REQUIRED and not is_storage_configured():
+        raise RuntimeError("STORAGE_REQUIRED=true but Supabase storage is not configured")
+
+    async with httpx.AsyncClient() as client:
         app.state.http_client = client
         yield
     # Client is automatically closed when the context manager exits
@@ -29,7 +34,7 @@ app = FastAPI(
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,4 +46,3 @@ app.include_router(ocr.router)
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
-
