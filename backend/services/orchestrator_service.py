@@ -15,16 +15,19 @@ from utils.ocr_utils import merge_adjacent_words
 logger = logging.getLogger(__name__)
 
 
+_MODEL_SELECTION_TARGETS = {
+    "easyocr": [(PYTORCH_SERVICE_URL, "easyocr"), (PADDLE_SERVICE_URL, "easyocr")],
+    "vietocr": [(PADDLE_SERVICE_URL, "paddle_layout"), (PYTORCH_SERVICE_URL, "vietocr")],
+    "paddleocr": [(PADDLE_SERVICE_URL, "paddleocr"), (PYTORCH_SERVICE_URL, "paddleocr")],
+    "paddle_structure": [(PADDLE_SERVICE_URL, "paddle_structure"), (PYTORCH_SERVICE_URL, "paddle_structure")],
+}
+
+
 def model_selection_targets(engine: str) -> list[tuple[str, str]]:
-    if engine == "easyocr":
-        return [(PYTORCH_SERVICE_URL, "easyocr"), (PADDLE_SERVICE_URL, "easyocr")]
-    if engine == "vietocr":
-        return [(PADDLE_SERVICE_URL, "paddle_layout"), (PYTORCH_SERVICE_URL, "vietocr")]
-    if engine == "paddleocr":
-        return [(PADDLE_SERVICE_URL, "paddleocr"), (PYTORCH_SERVICE_URL, "paddleocr")]
-    if engine == "paddle_structure":
-        return [(PADDLE_SERVICE_URL, "paddle_structure"), (PYTORCH_SERVICE_URL, "paddle_structure")]
-    raise UnsupportedEngineError(engine=engine)
+    try:
+        return _MODEL_SELECTION_TARGETS[engine]
+    except KeyError:
+        raise UnsupportedEngineError(engine=engine)
 
 
 async def select_ocr_models(client: httpx.AsyncClient, engine: str, languages_list: list) -> dict:
