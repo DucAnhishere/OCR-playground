@@ -43,6 +43,8 @@ function App() {
   const debounceTimerRef = useRef(null);
   const containerRef = useRef(null);
   const lastRunRef = useRef(null);
+  const initialModelSelectionRef = useRef(false);
+  const modelSelectionRequestRef = useRef(0);
 
   const [engine, setEngine] = useState('easyocr');
   const [languages, setLanguages] = useState(['vi', 'en']);
@@ -57,6 +59,7 @@ function App() {
   const [previewMetadata, setPreviewMetadata] = useState({});
 
   const [loading, setLoading] = useState(false);
+  const [modelLoading, setModelLoading] = useState(false);
   const [backendStatus, setBackendStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
@@ -103,6 +106,51 @@ function App() {
     }
   }, [apiUrl, config, originalImage]);
 
+  const requestModelSelection = useCallback(async (nextEngine = engine, nextLanguages = languages) => {
+    const requestId = modelSelectionRequestRef.current + 1;
+    modelSelectionRequestRef.current = requestId;
+    initialModelSelectionRef.current = true;
+    setModelLoading(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`${apiUrl}/models/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine: nextEngine, languages: nextLanguages })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        const detail = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
+        throw new Error(detail || "Could not load selected model.");
+      }
+      await fetchBackendStatus(apiUrl);
+    } catch (error) {
+      if (modelSelectionRequestRef.current === requestId) {
+        setErrorMessage(error.message || "Could not load selected OCR model.");
+      }
+    } finally {
+      if (modelSelectionRequestRef.current === requestId) {
+        setModelLoading(false);
+      }
+    }
+  }, [apiUrl, engine, fetchBackendStatus, languages]);
+
+  const selectEngine = useCallback((nextEngine) => {
+    setEngine(nextEngine);
+    setResults([]);
+    setSelectedWordIndex(null);
+    setDetectedTables([]);
+    setExecutionStats(null);
+    lastRunRef.current = null;
+    requestModelSelection(nextEngine, languages);
+  }, [languages, requestModelSelection]);
+
+  const selectLanguages = useCallback((nextLanguages) => {
+    setLanguages(nextLanguages);
+    lastRunRef.current = null;
+    requestModelSelection(engine, nextLanguages);
+  }, [engine, requestModelSelection]);
+
   const updateConfigAndPreview = (updatedFields, instant = false) => {
     setConfig(prev => {
       const newConfig = { ...prev, ...updatedFields };
@@ -129,6 +177,12 @@ function App() {
     fetchBackendStatus(apiUrl);
     fetchDefaultConfig(apiUrl);
   }, [apiUrl, fetchBackendStatus, fetchDefaultConfig]);
+
+  useEffect(() => {
+    if (backendStatus && !initialModelSelectionRef.current) {
+      requestModelSelection(engine, languages);
+    }
+  }, [backendStatus, engine, languages, requestModelSelection]);
 
   useEffect(() => {
     if (originalImage) requestPreprocessingPreview(config);
@@ -396,13 +450,13 @@ function App() {
 
             <button 
               onClick={runFullOCR} 
-              disabled={loading || !originalImage}
+              disabled={loading || modelLoading || !originalImage}
               className="group relative h-24 rounded-3xl bg-white text-black font-bold text-lg flex items-center justify-center gap-3 overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] transition-transform duration-500"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-purple-200 to-cyan-200 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
               <span className="relative z-10 flex items-center gap-2">
-                {loading ? <RefreshCw className="animate-spin" /> : <Play fill="currentColor" />}
-                Run Engine
+                {(loading || modelLoading) ? <RefreshCw className="animate-spin" /> : <Play fill="currentColor" />}
+                {modelLoading ? "Loading Model" : "Run Engine"}
               </span>
             </button>
 
@@ -412,9 +466,9 @@ function App() {
                 config={config}
                 updateConfig={updateConfigAndPreview}
                 engine={engine}
-                setEngine={setEngine}
+                setEngine={selectEngine}
                 languages={languages}
-                setLanguages={setLanguages}
+                setLanguages={selectLanguages}
                 backendStatus={backendStatus}
                 mergeBoxes={mergeBoxes}
                 setMergeBoxes={setMergeBoxes}

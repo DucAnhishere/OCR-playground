@@ -1,4 +1,4 @@
-from shared.contracts import OCRServiceRequest, OCRServiceResponse
+from shared.contracts import ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
 
 
 def test_ocr_service_response_contract_accepts_all_engine_shapes():
@@ -33,3 +33,18 @@ def test_ocr_service_request_rejects_unknown_engine():
     else:
         raise AssertionError("unknown engine should be rejected by the shared contract")
 
+
+def test_model_selection_response_contract():
+    response = ModelSelectionResponse.model_validate(
+        {
+            "service": "ocr-pytorch",
+            "requested_engine": "easyocr",
+            "active_model": "easyocr",
+            "loaded_models": ["easyocr"],
+            "unloaded_models": ["vietocr"],
+            "warnings": [],
+        }
+    )
+
+    assert response.active_model == "easyocr"
+    assert response.unloaded_models == ["vietocr"]

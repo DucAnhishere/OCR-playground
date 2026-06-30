@@ -196,6 +196,22 @@ curl http://localhost:8000/api/status
 
 `/api/status` returns `online`, `degraded`, or `offline` based on downstream service reachability.
 
+### Model Lifecycle
+The frontend calls the BFF whenever the selected OCR engine changes:
+
+```bash
+curl -X POST http://localhost:8000/api/models/select \
+  -H "Content-Type: application/json" \
+  -d '{"engine":"vietocr","languages":["vi","en"]}'
+```
+
+The BFF loads only the models required for that workflow and asks unrelated services to unload their cached models. For example:
+
+* `easyocr`: load EasyOCR in the PyTorch service, unload Paddle models.
+* `vietocr`: load PP-Structure in the Paddle service and VietOCR in the PyTorch service.
+* `paddleocr`: load PaddleOCR and unload PyTorch models.
+* `paddle_structure`: load PP-Structure and unload PyTorch models.
+
 ### Storage Fallback
 Supabase is best-effort by default. If Supabase is not configured or an upload fails, OCR still runs and the frontend receives base64 fallback data. The response includes:
 

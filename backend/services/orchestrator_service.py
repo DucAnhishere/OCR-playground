@@ -1,17 +1,86 @@
 import base64
+import asyncio
 import logging
 import time
 import uuid
 
 import httpx
 
-from const import IMAGE_PROCESSOR_URL, ENGINE_ROUTING_MAP, OCR_TIMEOUT_SECONDS, PREPROCESS_TIMEOUT_SECONDS
+from const import PADDLE_SERVICE_URL, PYTORCH_SERVICE_URL, IMAGE_PROCESSOR_URL, ENGINE_ROUTING_MAP, OCR_TIMEOUT_SECONDS, PREPROCESS_TIMEOUT_SECONDS
 from exceptions import ImageProcessorError, OCRServiceError, UnsupportedEngineError
 from services.supabase_service import is_storage_configured, upload_to_supabase
-from shared.contracts import OCRServiceRequest, OCRServiceResponse, OCRWordResult
+from shared.contracts import ModelSelectionRequest, ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
 from utils.ocr_utils import merge_adjacent_words
 
 logger = logging.getLogger(__name__)
+
+
+def model_selection_targets(engine: str) -> list[tuple[str, str]]:
+    if engine == "easyocr":
+        return [(PYTORCH_SERVICE_URL, "easyocr"), (PADDLE_SERVICE_URL, "easyocr")]
+    if engine == "vietocr":
+        return [(PADDLE_SERVICE_URL, "paddle_layout"), (PYTORCH_SERVICE_URL, "vietocr")]
+    if engine == "paddleocr":
+        return [(PADDLE_SERVICE_URL, "paddleocr"), (PYTORCH_SERVICE_URL, "paddleocr")]
+    if engine == "paddle_structure":
+        return [(PADDLE_SERVICE_URL, "paddle_structure"), (PYTORCH_SERVICE_URL, "paddle_structure")]
+    raise UnsupportedEngineError(engine=engine)
+
+
+async def select_ocr_models(client: httpx.AsyncClient, engine: str, languages_list: list) -> dict:
+    start_time = time.time()
+
+    async def select_service_model(service_url: str, target_engine: str) -> ModelSelectionResponse:
+        request_payload = ModelSelectionRequest(engine=target_engine, languages=languages_list)
+        try:
+            resp = await client.post(
+                f"{service_url}/api/models/select",
+                json=request_payload.model_dump(),
+                timeout=OCR_TIMEOUT_SECONDS,
+            )
+        except httpx.TimeoutException as e:
+            raise OCRServiceError(
+                status_code=504,
+                detail=f"Model selection timed out for {target_engine} at {service_url}: {e}",
+            )
+        except httpx.RemoteProtocolError as e:
+            raise OCRServiceError(
+                status_code=502,
+                detail=f"Model selection service disconnected for {target_engine} at {service_url}: {e}",
+            )
+        except httpx.HTTPError as e:
+            raise OCRServiceError(
+                status_code=502,
+                detail=f"Could not call model selection for {target_engine} at {service_url}: {e}",
+            )
+        if resp.status_code != 200:
+            raise OCRServiceError(status_code=resp.status_code, detail=resp.text)
+        try:
+            selection = ModelSelectionResponse.model_validate(resp.json())
+        except Exception as e:
+            raise OCRServiceError(
+                status_code=502,
+                detail=f"Invalid model selection response from {service_url}: {e}",
+            )
+        return selection
+
+    selections = await asyncio.gather(
+        *[
+            select_service_model(service_url, target_engine)
+            for service_url, target_engine in model_selection_targets(engine)
+        ]
+    )
+    warnings = [warning for selection in selections for warning in selection.warnings]
+    elapsed = round(time.time() - start_time, 3)
+    logger.info("Model selection for engine=%s completed in %.3fs", engine, elapsed)
+
+    return {
+        "success": True,
+        "engine": engine,
+        "services": [selection.model_dump() for selection in selections],
+        "model_selection_seconds": elapsed,
+        "warnings": warnings,
+    }
 
 
 async def process_image(client: httpx.AsyncClient, base64_image: str, config_dict: dict) -> dict:
@@ -52,11 +121,27 @@ async def run_ocr_engine(
         layout_words=layout_words,
     )
     target_service_url = f"{base_url}/api/ocr"
-    resp = await client.post(
-        target_service_url,
-        json=request_payload.model_dump(),
-        timeout=OCR_TIMEOUT_SECONDS,
-    )
+    try:
+        resp = await client.post(
+            target_service_url,
+            json=request_payload.model_dump(),
+            timeout=OCR_TIMEOUT_SECONDS,
+        )
+    except httpx.TimeoutException as e:
+        raise OCRServiceError(
+            status_code=504,
+            detail=f"{engine} service timed out after {OCR_TIMEOUT_SECONDS}s: {e}",
+        )
+    except httpx.RemoteProtocolError as e:
+        raise OCRServiceError(
+            status_code=502,
+            detail=f"{engine} service disconnected before sending a response: {e}",
+        )
+    except httpx.HTTPError as e:
+        raise OCRServiceError(
+            status_code=502,
+            detail=f"Could not call {engine} service at {target_service_url}: {e}",
+        )
 
     if resp.status_code != 200:
         raise OCRServiceError(
@@ -81,8 +166,19 @@ async def run_ocr_workflow(
     if engine != "vietocr":
         return await run_ocr_engine(client, engine, processed_base64, languages_list)
 
-    layout_response = await run_ocr_engine(client, "paddle_structure", processed_base64, languages_list)
+    layout_response = await run_ocr_engine(client, "paddle_layout", processed_base64, languages_list)
     layout_words = [word.model_dump() for word in layout_response.words]
+    if not layout_words:
+        return OCRServiceResponse(
+            words=[],
+            preprocessed_image=layout_response.preprocessed_image,
+            detected_tables=layout_response.detected_tables,
+            gpu_accelerated=layout_response.gpu_accelerated,
+            warnings=[
+                *layout_response.warnings,
+                "Paddle layout did not detect text regions; VietOCR recognition was skipped.",
+            ],
+        )
     recognition_image = layout_response.preprocessed_image or processed_base64
     viet_response = await run_ocr_engine(
         client,

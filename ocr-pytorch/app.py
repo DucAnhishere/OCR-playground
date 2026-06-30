@@ -1,14 +1,17 @@
 import cv2
 import numpy as np
 import base64
+import gc
+import time
 import torch
 import easyocr
 from PIL import Image
 from fastapi import FastAPI, HTTPException
+from threading import RLock
 from vietocr.tool.predictor import Predictor
 from vietocr.tool.config import Cfg
 
-from shared.contracts import OCRServiceRequest, OCRServiceResponse
+from shared.contracts import ModelSelectionRequest, ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
 from const import (
     VIETOCR_WEIGHTS_PATH,
     VIETOCR_CONFIG_NAME
@@ -19,6 +22,83 @@ app = FastAPI(title="OCR PyTorch Microservice (EasyOCR & VietOCR)")
 # Caches to avoid reloading weights/models on every request
 _easyocr_readers_cache = {}
 _vietocr_cache = {}
+_model_lock = RLock()
+_active_model = None
+
+
+def release_torch_memory():
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+        try:
+            torch.mps.empty_cache()
+        except Exception as exc:
+            print(f"[PyTorch Service] Could not empty MPS cache: {exc}")
+
+
+def loaded_models() -> list[str]:
+    models = []
+    if _easyocr_readers_cache:
+        models.append("easyocr")
+    if "predictor" in _vietocr_cache:
+        models.append("vietocr")
+    return models
+
+
+def unload_easyocr_readers() -> list[str]:
+    if not _easyocr_readers_cache:
+        return []
+    _easyocr_readers_cache.clear()
+    release_torch_memory()
+    print("[PyTorch Service] Unloaded EasyOCR readers")
+    return ["easyocr"]
+
+
+def unload_vietocr_predictor() -> list[str]:
+    if "predictor" not in _vietocr_cache:
+        return []
+    _vietocr_cache.clear()
+    release_torch_memory()
+    print("[PyTorch Service] Unloaded VietOCR predictor")
+    return ["vietocr"]
+
+
+def select_model(engine: str, languages: list[str]) -> ModelSelectionResponse:
+    global _active_model
+    start_time = time.time()
+    with _model_lock:
+        unloaded = []
+        warnings = []
+
+        if engine == "easyocr":
+            unloaded.extend(unload_vietocr_predictor())
+            get_easyocr_reader(languages)
+            _active_model = "easyocr"
+        elif engine == "vietocr":
+            unloaded.extend(unload_easyocr_readers())
+            get_vietocr_predictor()
+            _active_model = "vietocr"
+        else:
+            unloaded.extend(unload_easyocr_readers())
+            unloaded.extend(unload_vietocr_predictor())
+            _active_model = None
+            warnings.append(f"No PyTorch model is required for engine '{engine}'.")
+
+        elapsed = round(time.time() - start_time, 3)
+        print(
+            f"[PyTorch Service] Model selection engine={engine} "
+            f"active={_active_model} loaded={loaded_models()} unloaded={unloaded} took={elapsed}s"
+        )
+
+        return ModelSelectionResponse(
+            service="ocr-pytorch",
+            requested_engine=engine,
+            active_model=_active_model,
+            loaded_models=loaded_models(),
+            unloaded_models=unloaded,
+            warnings=warnings,
+        )
 
 def get_easyocr_reader(langs: list[str]) -> easyocr.Reader:
     cache_key = tuple(sorted(langs))
@@ -49,6 +129,23 @@ def get_vietocr_predictor() -> Predictor:
         _vietocr_cache["predictor"] = Predictor(config)
     return _vietocr_cache["predictor"]
 
+def require_easyocr_reader(langs: list[str]) -> easyocr.Reader:
+    cache_key = tuple(sorted(langs))
+    if cache_key not in _easyocr_readers_cache:
+        raise HTTPException(
+            status_code=409,
+            detail=f"EasyOCR model for languages {list(cache_key)} is not loaded. Call /api/models/select before OCR.",
+        )
+    return _easyocr_readers_cache[cache_key]
+
+def require_vietocr_predictor() -> Predictor:
+    if "predictor" not in _vietocr_cache:
+        raise HTTPException(
+            status_code=409,
+            detail="VietOCR model is not loaded. Call /api/models/select before OCR.",
+        )
+    return _vietocr_cache["predictor"]
+
 def decode_image(base64_str: str) -> np.ndarray:
     if "," in base64_str:
         base64_str = base64_str.split(",")[1]
@@ -72,17 +169,14 @@ def status():
         "gpu_acceleration": mps_available or cuda_available,
         "gpu_type": gpu_type,
         "pytorch_version": torch.__version__,
-        "device_allocated": "GPU" if (mps_available or cuda_available) else "CPU"
+        "device_allocated": "GPU" if (mps_available or cuda_available) else "CPU",
+        "active_model": _active_model,
+        "loaded_models": loaded_models(),
     }
 
 @app.on_event("startup")
 def startup_event():
-    print("[PyTorch Service] Starting model warmup...")
-    # Preload EasyOCR with default languages
-    get_easyocr_reader(["vi", "en"])
-    # Preload VietOCR
-    get_vietocr_predictor()
-    print("[PyTorch Service] Model warmup complete.")
+    print("[PyTorch Service] Starting without model warmup; models load on selection.")
 
 @app.get("/health/live")
 def live():
@@ -90,20 +184,27 @@ def live():
 
 @app.get("/health/ready")
 def ready():
-    easyocr_loaded = len(_easyocr_readers_cache) > 0
-    vietocr_loaded = "predictor" in _vietocr_cache
-    if easyocr_loaded and vietocr_loaded:
-        return {"status": "ready", "details": {"service": "ocr-pytorch"}}
-    else:
-        raise HTTPException(status_code=503, detail="Service warming up")
+    return {
+        "status": "ready",
+        "details": {
+            "service": "ocr-pytorch",
+            "active_model": _active_model,
+            "loaded_models": loaded_models(),
+        },
+    }
+
+
+@app.post("/api/models/select", response_model=ModelSelectionResponse)
+def select_runtime_model(request: ModelSelectionRequest):
+    return select_model(request.engine, request.languages)
 
 @app.post("/api/ocr")
-async def ocr(request: OCRServiceRequest):
+def ocr(request: OCRServiceRequest):
     try:
         if request.engine == 'easyocr':
             # --- Run EasyOCR ---
             img = decode_image(request.image)
-            reader = get_easyocr_reader(request.languages)
+            reader = require_easyocr_reader(request.languages)
             results = reader.readtext(img)
             
             word_results = []
@@ -141,7 +242,7 @@ async def ocr(request: OCRServiceRequest):
             crop_src_img = decode_image(request.image)
                 
             h_img, w_img = crop_src_img.shape[:2]
-            predictor = get_vietocr_predictor()
+            predictor = require_vietocr_predictor()
             word_results = []
             
             # Crop each bounding box and run VietOCR
@@ -188,5 +289,7 @@ async def ocr(request: OCRServiceRequest):
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported engine in PyTorch microservice: {request.engine}")
             
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PyTorch OCR execution failed: {str(e)}")

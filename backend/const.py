@@ -13,6 +13,7 @@ ENGINE_ROUTING_MAP = {
     'easyocr': PYTORCH_SERVICE_URL,
     'vietocr': PYTORCH_SERVICE_URL,
     'paddleocr': PADDLE_SERVICE_URL,
+    'paddle_layout': PADDLE_SERVICE_URL,
     'paddle_structure': PADDLE_SERVICE_URL,
 }
 

@@ -3,7 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-EngineName = Literal["easyocr", "vietocr", "paddleocr", "paddle_structure"]
+EngineName = Literal["easyocr", "vietocr", "paddleocr", "paddle_structure", "paddle_layout"]
 StorageStatus = Literal["uploaded", "failed", "disabled"]
 
 
@@ -43,7 +43,20 @@ class OCRServiceResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ModelSelectionRequest(BaseModel):
+    engine: EngineName = Field(..., description="Frontend-selected OCR workflow")
+    languages: list[str] = Field(default_factory=lambda: ["vi", "en"])
+
+
+class ModelSelectionResponse(BaseModel):
+    service: str
+    requested_engine: EngineName
+    active_model: str | None = None
+    loaded_models: list[str] = Field(default_factory=list)
+    unloaded_models: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ServiceHealth(BaseModel):
     status: Literal["healthy", "unhealthy", "ready", "not_ready"]
     details: dict[str, Any] = Field(default_factory=dict)
-

@@ -3,7 +3,8 @@ import logging
 from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Request
 
 from schemas import PreprocessRequest, PreprocessResponse, OCRResponse
-from services.orchestrator_service import process_image, execute_ocr_pipeline
+from services.orchestrator_service import process_image, execute_ocr_pipeline, select_ocr_models
+from shared.contracts import ModelSelectionRequest
 from exceptions import (
     ImageProcessorError,
     OCRServiceError,
@@ -69,3 +70,23 @@ async def api_ocr(
             status_code=500,
             detail=f"OCR Orchestrator execution failed: {str(e)}"
         )
+
+
+@router.post("/models/select")
+async def api_select_models(request_data: ModelSelectionRequest, request: Request):
+    client = request.app.state.http_client
+    try:
+        return await select_ocr_models(
+            client=client,
+            engine=request_data.engine,
+            languages_list=request_data.languages,
+        )
+    except UnsupportedEngineError as e:
+        logger.warning("Unsupported OCR engine requested for model selection: %s", e.engine)
+        raise HTTPException(status_code=400, detail=str(e))
+    except OCRServiceError as e:
+        logger.error("Model selection service error: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        logger.exception("Unexpected error during model selection")
+        raise HTTPException(status_code=500, detail=f"Model selection failed: {str(e)}")
