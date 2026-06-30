@@ -96,12 +96,14 @@ ocr-playground/
 │   ├── services/             # Core Logic (supabase, orchestrator)
 │   ├── const.py              # Extracted constants and URLs
 │   └── app.py                # Gateway routing & CORS setup
+├── shared/                   # Shared Python contracts and Pydantic DTOs
 ├── image-processor/          # OpenCV image processing microservice
 ├── frontend/                 # React UI Dashboard (Vite)
 ├── ocr-pytorch/              # PyTorch Container (EasyOCR & VietOCR)
 │   ├── const.py              # Extracted constants and URLs
 │   └── app.py                
 ├── ocr-paddle/               # PaddlePaddle Container (PaddleOCR & PP-StructureV3)
+├── docs/                     # Project documentation and architecture details
 ├── weights/                  # Persistent host-cached directory for model weights
 └── download_weights.py       # Host-based pre-download script for weight files
 ```
@@ -194,6 +196,7 @@ curl http://localhost:8000/api/health/ready
 curl http://localhost:8000/api/status
 ```
 
+`/api/health/ready` dynamically enforces readiness by ensuring all downstream OCR microservices have successfully warmed up their baseline models.
 `/api/status` returns `online`, `degraded`, or `offline` based on downstream service reachability.
 
 ### Model Lifecycle
