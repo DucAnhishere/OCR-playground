@@ -41,6 +41,13 @@ def encode_image(img: np.ndarray) -> str:
 @app.on_event("startup")
 def startup_event():
     print("[OCR] OCR Paddle Microservice starting up...")
+    print("[OCR] Starting model warmup...")
+    # Preload PaddleOCR for default languages
+    get_paddle_ocr("vi")
+    get_paddle_ocr("en")
+    # Preload PPStructureV3
+    get_paddle_structure()
+    print("[OCR] Model warmup complete.")
 
 @app.get("/api/status")
 def status():
@@ -57,7 +64,12 @@ def live():
 
 @app.get("/health/ready")
 def ready():
-    return {"status": "ready", "details": {"service": "ocr-paddle"}}
+    paddle_ocr_loaded = "vi" in _paddle_ocr_cache and "en" in _paddle_ocr_cache
+    structure_loaded = "engine" in _paddle_structure_cache
+    if paddle_ocr_loaded and structure_loaded:
+        return {"status": "ready", "details": {"service": "ocr-paddle"}}
+    else:
+        raise HTTPException(status_code=503, detail="Service warming up")
 
 @app.post("/api/ocr")
 async def ocr(request: OCRServiceRequest):

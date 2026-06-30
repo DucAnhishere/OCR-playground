@@ -75,13 +75,27 @@ def status():
         "device_allocated": "GPU" if (mps_available or cuda_available) else "CPU"
     }
 
+@app.on_event("startup")
+def startup_event():
+    print("[PyTorch Service] Starting model warmup...")
+    # Preload EasyOCR with default languages
+    get_easyocr_reader(["vi", "en"])
+    # Preload VietOCR
+    get_vietocr_predictor()
+    print("[PyTorch Service] Model warmup complete.")
+
 @app.get("/health/live")
 def live():
     return {"status": "healthy"}
 
 @app.get("/health/ready")
 def ready():
-    return {"status": "ready", "details": {"service": "ocr-pytorch"}}
+    easyocr_loaded = len(_easyocr_readers_cache) > 0
+    vietocr_loaded = "predictor" in _vietocr_cache
+    if easyocr_loaded and vietocr_loaded:
+        return {"status": "ready", "details": {"service": "ocr-pytorch"}}
+    else:
+        raise HTTPException(status_code=503, detail="Service warming up")
 
 @app.post("/api/ocr")
 async def ocr(request: OCRServiceRequest):
