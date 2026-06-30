@@ -259,4 +259,14 @@ ENGINE_ROUTING_MAP = {
 }
 ```
 
+4. Update `_MODEL_SELECTION_TARGETS` in [`backend/services/orchestrator_service.py`](file:///Users/testadmin/Desktop/Desktop-Mac/ocr-playground/backend/services/orchestrator_service.py) to declare which models should be loaded for your new engine:
+
+```python
+# In backend/services/orchestrator_service.py
+_MODEL_SELECTION_TARGETS = {
+    # ...
+    'custom_ocr': [("http://your-new-service:8080", "custom_ocr")],
+}
+```
+
 All preprocessing, box merging, and the React UI elements will seamlessly adapt to the new engine output!
