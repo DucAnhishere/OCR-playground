@@ -1,17 +1,13 @@
-import os
 import cv2
 import numpy as np
 import base64
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from paddleocr import PaddleOCR, PPStructureV3
 
-app = FastAPI(title="OCR Paddle Microservice")
+from shared.contracts import OCRServiceRequest, OCRServiceResponse
 
-class OCRRequest(BaseModel):
-    image: str  # Base64 string
-    engine: str  # 'paddleocr' or 'paddle_structure'
-    languages: list[str] = ["en"]
+
+app = FastAPI(title="OCR Paddle Microservice")
 
 # Caches to avoid reloading models on every request
 _paddle_ocr_cache = {}
@@ -55,8 +51,16 @@ def status():
         "paddle_structure_installed": True
     }
 
+@app.get("/health/live")
+def live():
+    return {"status": "healthy"}
+
+@app.get("/health/ready")
+def ready():
+    return {"status": "ready", "details": {"service": "ocr-paddle"}}
+
 @app.post("/api/ocr")
-async def ocr(request: OCRRequest):
+async def ocr(request: OCRServiceRequest):
     try:
         img = decode_image(request.image)
         
@@ -140,11 +144,12 @@ async def ocr(request: OCRRequest):
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported engine in Paddle microservice: {request.engine}")
             
-        return {
-            "words": word_results,
-            "preprocessed_image": preprocessed_image_base64,
-            "detected_tables": detected_tables
-        }
+        return OCRServiceResponse(
+            words=word_results,
+            preprocessed_image=preprocessed_image_base64,
+            detected_tables=detected_tables,
+            gpu_accelerated=False,
+        )
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PaddleOCR execution failed: {str(e)}")

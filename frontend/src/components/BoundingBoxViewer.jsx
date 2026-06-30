@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Crop, Image as ImageIcon } from 'lucide-react';
 
 const BoundingBoxViewer = ({ 
-  originalImage, 
   processedImage, 
   results, 
   loading, 

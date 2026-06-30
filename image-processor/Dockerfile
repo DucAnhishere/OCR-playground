@@ -8,7 +8,7 @@ WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
+COPY image-processor/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ==========================================
@@ -16,12 +16,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ==========================================
 FROM python:3.10-slim AS runner
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY . .
+COPY image-processor/ .
+COPY shared/ ./shared/
 
 EXPOSE 8004
 

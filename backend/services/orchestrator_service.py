@@ -1,11 +1,17 @@
-import time
 import base64
+import logging
+import time
 import uuid
+
 import httpx
-from const import IMAGE_PROCESSOR_URL, ENGINE_ROUTING_MAP
+
+from const import IMAGE_PROCESSOR_URL, ENGINE_ROUTING_MAP, OCR_TIMEOUT_SECONDS, PREPROCESS_TIMEOUT_SECONDS
 from exceptions import ImageProcessorError, OCRServiceError, UnsupportedEngineError
-from services.supabase_service import upload_to_supabase
+from services.supabase_service import is_storage_configured, upload_to_supabase
+from shared.contracts import OCRServiceRequest, OCRServiceResponse, OCRWordResult
 from utils.ocr_utils import merge_adjacent_words
+
+logger = logging.getLogger(__name__)
 
 
 async def process_image(client: httpx.AsyncClient, base64_image: str, config_dict: dict) -> dict:
@@ -16,6 +22,8 @@ async def process_image(client: httpx.AsyncClient, base64_image: str, config_dic
             "image": base64_image,
             "config": config_dict
         }
+        ,
+        timeout=PREPROCESS_TIMEOUT_SECONDS,
     )
     if proc_resp.status_code != 200:
         raise ImageProcessorError(
@@ -25,20 +33,29 @@ async def process_image(client: httpx.AsyncClient, base64_image: str, config_dic
     return proc_resp.json()
 
 
-async def run_ocr_engine(client: httpx.AsyncClient, engine: str, base64_image: str, languages_list: list) -> dict:
+async def run_ocr_engine(
+    client: httpx.AsyncClient,
+    engine: str,
+    base64_image: str,
+    languages_list: list,
+    layout_words: list[dict] | None = None,
+) -> OCRServiceResponse:
     """Routes an OCR request to the appropriate OCR microservice."""
     base_url = ENGINE_ROUTING_MAP.get(engine)
     if not base_url:
         raise UnsupportedEngineError(engine=engine)
 
+    request_payload = OCRServiceRequest(
+        image=base64_image,
+        engine=engine,
+        languages=languages_list,
+        layout_words=layout_words,
+    )
     target_service_url = f"{base_url}/api/ocr"
     resp = await client.post(
         target_service_url,
-        json={
-            "image": base64_image,
-            "engine": engine,
-            "languages": languages_list
-        }
+        json=request_payload.model_dump(),
+        timeout=OCR_TIMEOUT_SECONDS,
     )
 
     if resp.status_code != 200:
@@ -46,7 +63,61 @@ async def run_ocr_engine(client: httpx.AsyncClient, engine: str, base64_image: s
             status_code=resp.status_code,
             detail=resp.text
         )
-    return resp.json()
+    try:
+        return OCRServiceResponse.model_validate(resp.json())
+    except Exception as e:
+        raise OCRServiceError(
+            status_code=502,
+            detail=f"Invalid OCR service response from {engine}: {e}",
+        )
+
+
+async def run_ocr_workflow(
+    client: httpx.AsyncClient,
+    engine: str,
+    processed_base64: str,
+    languages_list: list,
+) -> OCRServiceResponse:
+    if engine != "vietocr":
+        return await run_ocr_engine(client, engine, processed_base64, languages_list)
+
+    layout_response = await run_ocr_engine(client, "paddle_structure", processed_base64, languages_list)
+    layout_words = [word.model_dump() for word in layout_response.words]
+    recognition_image = layout_response.preprocessed_image or processed_base64
+    viet_response = await run_ocr_engine(
+        client,
+        "vietocr",
+        recognition_image,
+        languages_list,
+        layout_words=layout_words,
+    )
+
+    return OCRServiceResponse(
+        words=viet_response.words,
+        preprocessed_image=layout_response.preprocessed_image or viet_response.preprocessed_image,
+        detected_tables=layout_response.detected_tables or viet_response.detected_tables,
+        gpu_accelerated=viet_response.gpu_accelerated,
+        warnings=[*layout_response.warnings, *viet_response.warnings],
+    )
+
+
+async def upload_best_effort(
+    client: httpx.AsyncClient,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+    warnings: list[str],
+) -> tuple[str | None, str]:
+    if not is_storage_configured():
+        warnings.append("Supabase storage is disabled or not configured; using base64 fallback.")
+        return None, "disabled"
+
+    try:
+        return await upload_to_supabase(client, file_bytes, filename, content_type), "uploaded"
+    except Exception as e:
+        logger.warning("Supabase upload failed for %s: %s", filename, e)
+        warnings.append(f"Supabase upload failed for {filename}; using base64 fallback.")
+        return None, "failed"
 
 
 async def execute_ocr_pipeline(
@@ -68,13 +139,19 @@ async def execute_ocr_pipeline(
     5. Merge adjacent word bounding boxes (optional).
     """
     start_time = time.time()
+    warnings = []
+
+    if engine not in ENGINE_ROUTING_MAP:
+        raise UnsupportedEngineError(engine=engine)
 
     original_base64 = f"data:{content_type};base64," + base64.b64encode(file_bytes).decode('utf-8')
     ext = filename.rsplit('.', 1)[-1] if '.' in filename else 'jpg'
 
-    # Upload original image to Supabase
+    # Upload original image to Supabase as a best-effort side effect.
     orig_filename = f"original_{uuid.uuid4().hex}.{ext}"
-    original_url = await upload_to_supabase(client, file_bytes, orig_filename, content_type)
+    original_url, original_storage_status = await upload_best_effort(
+        client, file_bytes, orig_filename, content_type, warnings
+    )
 
     # 1. Route to Image Processor
     proc_data = await process_image(client, original_base64, config_dict)
@@ -85,15 +162,16 @@ async def execute_ocr_pipeline(
     if not processed_base64.startswith("data:"):
         processed_base64 = f"data:image/jpeg;base64,{processed_base64}"
 
-    # 2. Route to OCR Microservice
-    resp_data = await run_ocr_engine(client, engine, processed_base64, languages_list)
+    # 2. Run the OCR workflow. BFF owns multi-service orchestration.
+    resp_data = await run_ocr_workflow(client, engine, processed_base64, languages_list)
 
-    words = resp_data.get("words", [])
-    preprocessed_image = resp_data.get("preprocessed_image")
-    detected_tables = resp_data.get("detected_tables", [])
+    words = [word.model_dump() for word in resp_data.words]
+    preprocessed_image = resp_data.preprocessed_image
+    detected_tables = [table.model_dump() for table in resp_data.detected_tables]
+    warnings.extend(resp_data.warnings)
 
     # Extract real GPU status from the OCR service response
-    gpu_active = resp_data.get("gpu_accelerated", False)
+    gpu_active = resp_data.gpu_accelerated
 
     elapsed = time.time() - start_time
 
@@ -105,12 +183,11 @@ async def execute_ocr_pipeline(
         final_display_base64 = processed_base64
         final_filename = f"processed_{uuid.uuid4().hex}.jpg"
         
-    # Upload the chosen final image to Supabase ONCE
-    try:
-        final_bytes = base64.b64decode(final_display_base64.split(",", 1)[-1])
-        processed_url = await upload_to_supabase(client, final_bytes, final_filename, "image/jpeg")
-    except Exception as e:
-        processed_url = None
+    # Upload the chosen final image to Supabase as a best-effort side effect.
+    final_bytes = base64.b64decode(final_display_base64.split(",", 1)[-1])
+    processed_url, processed_storage_status = await upload_best_effort(
+        client, final_bytes, final_filename, "image/jpeg", warnings
+    )
 
     # 3. Perform box merging
     if merge_boxes:
@@ -125,10 +202,13 @@ async def execute_ocr_pipeline(
         "metadata": {
             **meta,
             "words_count": len(words),
-            "detected_tables": detected_tables
+            "detected_tables": detected_tables,
+            "storage_status": "uploaded"
+            if original_storage_status == "uploaded" and processed_storage_status == "uploaded"
+            else ("disabled" if "disabled" in {original_storage_status, processed_storage_status} else "failed"),
         },
         "engine": engine,
         "execution_time_seconds": round(elapsed, 3),
-        "gpu_accelerated": gpu_active
+        "gpu_accelerated": gpu_active,
+        "warnings": warnings,
     }
-

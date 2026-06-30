@@ -11,12 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY ocr-pytorch/requirements.txt .
 
 # Cài đặt thư viện Python (đã comment torch/torchvision trong requirements.txt)
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY ocr-pytorch/ .
+COPY shared/ ./shared/
 
 EXPOSE 8002
 

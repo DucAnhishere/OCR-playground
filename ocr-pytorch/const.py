@@ -1,10 +1,7 @@
-import os
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
-
-# Internal Service Routing
-PADDLE_SERVICE_URL = os.getenv("PADDLE_SERVICE_URL", "http://ocr-paddle:8003")
 
 # VietOCR Configuration
 VIETOCR_WEIGHTS_PATH = os.getenv("VIETOCR_WEIGHTS_PATH", "/root/.vietocr/vgg_transformer.pth")

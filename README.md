@@ -158,7 +158,8 @@ Once weights are cached, spin up the entire Docker Compose stack:
 
 This deployment script will:
 * Build and start all 5 services in detached mode.
-* Bind mount `./weights/` directories into their corresponding container cache paths (`/root/.EasyOCR`, `/root/.paddlex`, etc.).
+* Use prod-like immutable service images by default.
+* Bind mount only model weight directories into their corresponding container cache paths (`/root/.EasyOCR`, `/root/.paddlex`, etc.).
 * Set `FLAGS_use_mkldnn=0` on the Paddle container to prevent Apple Silicon CPU emulation segmentation faults (`SIGSEGV`).
 
 #### Services List
@@ -176,6 +177,56 @@ To stop all services:
 ```bash
 docker compose down
 ```
+
+### Local Development Override
+For day-to-day development with source bind mounts and FastAPI reload enabled, run:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+The default `docker-compose.yml` is intentionally closer to production: no source bind mounts and no reload commands.
+
+### Health Endpoints
+Use these endpoints for smoke checks:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/api/health/live
+curl http://localhost:8000/api/health/ready
+curl http://localhost:8000/api/status
+```
+
+`/api/status` returns `online`, `degraded`, or `offline` based on downstream service reachability.
+
+### Storage Fallback
+Supabase is best-effort by default. If Supabase is not configured or an upload fails, OCR still runs and the frontend receives base64 fallback data. The response includes:
+
+* `metadata.storage_status`: `uploaded`, `failed`, or `disabled`
+* `warnings`: non-fatal pipeline warnings
+
+Set `STORAGE_REQUIRED=true` in `.env` if a deployment must fail startup when Supabase is not configured.
+
+### Developer Checklist
+Before opening a PR or shipping a local change:
+
+```bash
+cd frontend
+npm ci
+npm run lint
+npm run build
+cd ..
+python3 -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+pytest tests
+```
+
+Then run a smoke test:
+
+1. Start the stack with Docker Compose.
+2. Check `/api/health/ready` and `/api/status`.
+3. Upload a small image in the UI.
+4. Run EasyOCR, PaddleOCR, PP-Structure, and VietOCR.
+5. Repeat once with Supabase credentials removed and confirm the UI still renders via base64 fallback.
 
 ---
 

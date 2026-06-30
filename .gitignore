@@ -16,6 +16,16 @@ backend/venv/
 backend/env/
 .env
 
+# --- Python Test/Lint Caches ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+
 # --- Node / Frontend ---
 node_modules/
 frontend/node_modules/
@@ -23,6 +33,10 @@ frontend/dist/
 frontend/dist-ssr/
 frontend/frontend.log
 frontend/*.local
+.env*.local
+frontend/.eslintcache
+.eslintcache
+
 
 # --- General Logs ---
 *.log
@@ -53,4 +67,8 @@ Thumbs.db
 
 # --- OCR Weights ---
 weights/
+
+# --- Codegraph ---
+.codegraph/
+
 

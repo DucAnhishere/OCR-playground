@@ -1,28 +1,20 @@
-import os
 import cv2
 import numpy as np
 import base64
 import torch
 import easyocr
-import httpx
 from PIL import Image
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from vietocr.tool.predictor import Predictor
 from vietocr.tool.config import Cfg
 
+from shared.contracts import OCRServiceRequest, OCRServiceResponse
 from const import (
-    PADDLE_SERVICE_URL,
     VIETOCR_WEIGHTS_PATH,
     VIETOCR_CONFIG_NAME
 )
 
 app = FastAPI(title="OCR PyTorch Microservice (EasyOCR & VietOCR)")
-
-class OCRRequest(BaseModel):
-    image: str  # Base64 string
-    engine: str  # 'easyocr' or 'vietocr'
-    languages: list[str] = ["en", "vi"]
 
 # Caches to avoid reloading weights/models on every request
 _easyocr_readers_cache = {}
@@ -83,8 +75,16 @@ def status():
         "device_allocated": "GPU" if (mps_available or cuda_available) else "CPU"
     }
 
+@app.get("/health/live")
+def live():
+    return {"status": "healthy"}
+
+@app.get("/health/ready")
+def ready():
+    return {"status": "ready", "details": {"service": "ocr-pytorch"}}
+
 @app.post("/api/ocr")
-async def ocr(request: OCRRequest):
+async def ocr(request: OCRServiceRequest):
     try:
         if request.engine == 'easyocr':
             # --- Run EasyOCR ---
@@ -112,57 +112,28 @@ async def ocr(request: OCRRequest):
                     "box": {"x": x, "y": y, "w": w, "h": h}
                 })
                 
-            return {"words": word_results}
+            return OCRServiceResponse(
+                words=word_results,
+                gpu_accelerated=torch.backends.mps.is_available() or torch.cuda.is_available(),
+            )
             
         elif request.engine == 'vietocr':
-            # --- Run VietOCR ---
-            paddle_service_url = PADDLE_SERVICE_URL
-            
-            # 1. Query ocr-paddle service for PP-Structure bounding boxes and unwarping
-            try:
-                async with httpx.AsyncClient(timeout=120) as client:
-                    paddle_resp = await client.post(
-                        f"{paddle_service_url}/api/ocr",
-                        json={
-                            "image": request.image,
-                            "engine": "paddle_structure",
-                            "languages": request.languages
-                        }
-                    )
-                    
-                    if paddle_resp.status_code != 200:
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Paddle service returned status code {paddle_resp.status_code}: {paddle_resp.text}"
-                        )
-                        
-                    paddle_data = paddle_resp.json()
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
+            if not request.layout_words:
                 raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to communicate with Paddle layout detection service: {type(e).__name__}: {str(e)}"
+                    status_code=400,
+                    detail="VietOCR requires layout_words supplied by the orchestrator",
                 )
-                
-            paddle_words = paddle_data.get("words", [])
-            preprocessed_image_base64 = paddle_data.get("preprocessed_image")
-            detected_tables = paddle_data.get("detected_tables", [])
-            
-            # Decode the source image for cropping (either unwarped or original)
-            if preprocessed_image_base64:
-                crop_src_img = decode_image(preprocessed_image_base64)
-            else:
-                crop_src_img = decode_image(request.image)
+
+            crop_src_img = decode_image(request.image)
                 
             h_img, w_img = crop_src_img.shape[:2]
             predictor = get_vietocr_predictor()
             word_results = []
             
             # Crop each bounding box and run VietOCR
-            for w_item in paddle_words:
-                box = w_item["box"]
-                x, y, w, h = box["x"], box["y"], box["w"], box["h"]
+            for w_item in request.layout_words:
+                box = w_item.box
+                x, y, w, h = box.x, box.y, box.w, box.h
                 
                 pad = 2
                 x1 = max(0, x - pad)
@@ -189,17 +160,16 @@ async def ocr(request: OCRRequest):
                         
                     word_results.append({
                         "text": recognized_text,
-                        "confidence": w_item["confidence"],
+                        "confidence": w_item.confidence,
                         "box": {"x": x1, "y": y1, "w": crop_w, "h": crop_h}
                     })
                 except Exception as ex:
                     print(f"[VietOCR] Text recognition failed for crop {x1,y1,x2,y2}: {ex}")
                     
-            return {
-                "words": word_results,
-                "preprocessed_image": preprocessed_image_base64,
-                "detected_tables": detected_tables
-            }
+            return OCRServiceResponse(
+                words=word_results,
+                gpu_accelerated=torch.backends.mps.is_available() or torch.cuda.is_available(),
+            )
             
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported engine in PyTorch microservice: {request.engine}")

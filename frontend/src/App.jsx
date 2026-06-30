@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Upload, Play, RefreshCw, Layers, FileText, AlertCircle, Sparkles
 } from 'lucide-react';
@@ -44,6 +44,65 @@ function App() {
   const containerRef = useRef(null);
   const lastRunRef = useRef(null);
 
+  const [engine, setEngine] = useState('easyocr');
+  const [languages, setLanguages] = useState(['vi', 'en']);
+  const [mergeBoxes, setMergeBoxes] = useState(false);
+
+  // Results & stats
+  const [results, setResults] = useState([]);
+  const [detectedTables, setDetectedTables] = useState([]);
+  const [executionStats, setExecutionStats] = useState(null);
+  const [activeWordIndex, setActiveWordIndex] = useState(null);
+  const [selectedWordIndex, setSelectedWordIndex] = useState(null);
+  const [previewMetadata, setPreviewMetadata] = useState({});
+
+  const [loading, setLoading] = useState(false);
+  const [backendStatus, setBackendStatus] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  const fetchBackendStatus = useCallback(async (url = apiUrl) => {
+    try {
+      const res = await fetch(`${url}/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setBackendStatus(data);
+      } else setBackendStatus(null);
+    } catch {
+      setBackendStatus(null);
+    }
+  }, [apiUrl]);
+
+  const fetchDefaultConfig = useCallback(async (url = apiUrl) => {
+    try {
+      const res = await fetch(`${url}/config/default`);
+      if (res.ok) {
+        const data = await res.json();
+        setConfig(data);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [apiUrl]);
+
+  const requestPreprocessingPreview = useCallback(async (currentConfig = null) => {
+    if (!originalImage) return;
+    const targetConfig = currentConfig || config;
+    try {
+      const res = await fetch(`${apiUrl}/preprocess`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: originalImage, config: targetConfig })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProcessedImage(data.processed_image);
+        setPreviewMetadata(data.metadata || {});
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [apiUrl, config, originalImage]);
+
   const updateConfigAndPreview = (updatedFields, instant = false) => {
     setConfig(prev => {
       const newConfig = { ...prev, ...updatedFields };
@@ -65,31 +124,15 @@ function App() {
     });
   };
 
-  const [engine, setEngine] = useState('easyocr');
-  const [languages, setLanguages] = useState(['vi', 'en']);
-  const [mergeBoxes, setMergeBoxes] = useState(false);
-
-  // Results & stats
-  const [results, setResults] = useState([]);
-  const [detectedTables, setDetectedTables] = useState([]);
-  const [executionStats, setExecutionStats] = useState(null);
-  const [activeWordIndex, setActiveWordIndex] = useState(null);
-  const [selectedWordIndex, setSelectedWordIndex] = useState(null);
-  const [previewMetadata, setPreviewMetadata] = useState({});
-
-  const [loading, setLoading] = useState(false);
-  const [backendStatus, setBackendStatus] = useState(null);
-  const [errorMessage, setErrorMessage] = useState(null);
-
   useEffect(() => {
     localStorage.setItem('ocr_api_url', apiUrl);
     fetchBackendStatus(apiUrl);
     fetchDefaultConfig(apiUrl);
-  }, [apiUrl]);
+  }, [apiUrl, fetchBackendStatus, fetchDefaultConfig]);
 
   useEffect(() => {
     if (originalImage) requestPreprocessingPreview(config);
-  }, [originalImage]);
+  }, [config, originalImage, requestPreprocessingPreview]);
 
   useEffect(() => {
     const targetIndex = activeWordIndex !== null ? activeWordIndex : selectedWordIndex;
@@ -100,30 +143,6 @@ function App() {
       }
     }
   }, [activeWordIndex, selectedWordIndex]);
-
-  const fetchBackendStatus = async (url = apiUrl) => {
-    try {
-      const res = await fetch(`${url}/status`);
-      if (res.ok) {
-        const data = await res.json();
-        setBackendStatus(data);
-      } else setBackendStatus(null);
-    } catch (e) {
-      setBackendStatus(null);
-    }
-  };
-
-  const fetchDefaultConfig = async (url = apiUrl) => {
-    try {
-      const res = await fetch(`${url}/config/default`);
-      if (res.ok) {
-        const data = await res.json();
-        setConfig(data);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -141,25 +160,6 @@ function App() {
         setPreviewMetadata({});
       };
       reader.readAsDataURL(file);
-    }
-  };
-
-  const requestPreprocessingPreview = async (currentConfig = null) => {
-    if (!originalImage) return;
-    const targetConfig = currentConfig || config;
-    try {
-      const res = await fetch(`${apiUrl}/preprocess`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: originalImage, config: targetConfig })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setProcessedImage(data.processed_image);
-        setPreviewMetadata(data.metadata || {});
-      }
-    } catch (e) {
-      console.error(e);
     }
   };
 
@@ -237,7 +237,7 @@ function App() {
         const err = await res.json();
         setErrorMessage(err.detail || "Error running OCR.");
       }
-    } catch (e) {
+    } catch {
       setErrorMessage("Could not connect to backend.");
     } finally {
       setLoading(false);
