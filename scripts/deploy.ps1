@@ -1,12 +1,16 @@
+# Navigate to project root (one level up from scripts/)
+$PSScriptRoot_parent = Split-Path $PSScriptRoot -Parent
+Set-Location $PSScriptRoot_parent
+
 $ErrorActionPreference = "Stop"
 
 Write-Host "Checking for NVIDIA GPU..." -ForegroundColor Cyan
 if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
     Write-Host "NVIDIA GPU detected! Enabling GPU support..." -ForegroundColor Green
-    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up -d
 } else {
     Write-Host "No NVIDIA GPU found. Falling back to CPU..." -ForegroundColor Yellow
-    docker compose up -d
+    docker compose -f docker/docker-compose.yml up -d
 }
 
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {

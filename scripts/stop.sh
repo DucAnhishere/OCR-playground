@@ -7,9 +7,9 @@ YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Get the script directory and cd to it
+# Get the script directory, then cd to project root (one level up from scripts/)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$DIR"
+cd "$DIR/.."
 
 echo -e "${BLUE}=======================================================${NC}"
 echo -e "${BLUE}🛑 Stopping OCR Playground Microservices Stack${NC}"
@@ -17,7 +17,7 @@ echo -e "${BLUE}=======================================================${NC}"
 
 # 1. Stop Docker containers
 echo -e "${YELLOW}🐳 Stopping and removing docker containers...${NC}"
-docker compose down
+docker compose -f docker/docker-compose.yml down
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Docker containers stopped successfully.${NC}"
