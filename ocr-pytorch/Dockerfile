@@ -14,7 +14,7 @@ WORKDIR /app
 COPY ocr-pytorch/requirements.txt .
 
 # Cài đặt thư viện Python (đã comment torch/torchvision trong requirements.txt)
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
 
 COPY ocr-pytorch/ .
 COPY shared/ ./shared/

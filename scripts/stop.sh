@@ -17,7 +17,7 @@ echo -e "${BLUE}=======================================================${NC}"
 
 # 1. Stop Docker containers
 echo -e "${YELLOW}🐳 Stopping and removing docker containers...${NC}"
-docker compose -f docker/docker-compose.yml down
+docker compose --project-directory . -f docker/docker-compose.yml down
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Docker containers stopped successfully.${NC}"

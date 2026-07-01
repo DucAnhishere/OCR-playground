@@ -26,10 +26,10 @@ fi
 echo -e "${CYAN}🔍 Checking for NVIDIA GPU...${NC}"
 if command -v nvidia-smi &> /dev/null; then
     echo -e "${GREEN}✅ NVIDIA GPU detected! Enabling GPU support...${NC}"
-    docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up -d
+    docker compose --project-directory . -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up -d
 else
     echo -e "${YELLOW}⚠️ No NVIDIA GPU found. Falling back to CPU...${NC}"
-    docker compose -f docker/docker-compose.yml up -d
+    docker compose --project-directory . -f docker/docker-compose.yml up -d
 fi
 
 if [ $? -ne 0 ]; then
@@ -99,7 +99,7 @@ fi
 echo -e "   - ${BLUE}Gateway Docs${NC}: http://localhost:8000/docs"
 echo -e "   - ${BLUE}Gateway Health${NC}: http://localhost:8000/api/health/ready"
 echo -e "\n🛠️  Useful commands:"
-echo -e "   - View docker logs:   ${YELLOW}docker compose -f docker/docker-compose.yml logs -f${NC}"
+echo -e "   - View docker logs:   ${YELLOW}docker compose --project-directory . -f docker/docker-compose.yml logs -f${NC}"
 echo -e "   - View tunnel logs:   ${YELLOW}tail -f cloudflare_tunnel.log${NC}"
 echo -e "   - Stop application:   ${YELLOW}./scripts/stop.sh${NC}"
 echo -e "${GREEN}=======================================================${NC}"

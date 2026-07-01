@@ -21,29 +21,12 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if weights folder exists and is not empty
-if [ ! -d "weights" ] || [ -z "$(ls -A weights 2>/dev/null)" ]; then
-    echo -e "${YELLOW}⚠️  Warning: Weights directory not found or empty.${NC}"
-    echo -e "${YELLOW}To avoid slow builds and network timeouts inside Docker, we recommend downloading model weights natively first.${NC}"
-    read -p "Do you want to download model weights now using host virtualenv? (y/n): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        if [ -f "backend/.venv/bin/python" ]; then
-            echo -e "${BLUE}📥 Downloading weights using backend virtualenv...${NC}"
-            backend/.venv/bin/python download_weights.py
-        else
-            echo -e "${RED}❌ Error: backend virtual environment python not found at backend/.venv/bin/python. Please make sure the virtual environment exists.${NC}"
-            exit 1
-        fi
-    else
-        echo -e "${YELLOW}Continuing build without pre-downloading weights. Containers might download them on first run.${NC}"
-    fi
-fi
+
 
 echo -e "${YELLOW}🐳 Starting build via Docker Compose...${NC}\n"
 
 # Run docker compose build (context is project root, compose file in docker/)
-docker compose -f docker/docker-compose.yml build
+docker compose --project-directory . -f docker/docker-compose.yml build
 
 if [ $? -eq 0 ]; then
     echo -e "\n${YELLOW}🧹 Cleaning up dangling Docker images...${NC}"
