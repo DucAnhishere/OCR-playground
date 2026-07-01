@@ -1,6 +1,6 @@
 import json
 import logging
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Request
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Request, BackgroundTasks
 
 from schemas import PreprocessRequest, PreprocessResponse, OCRResponse
 from services.orchestrator_service import process_image, execute_ocr_pipeline, select_ocr_models
@@ -36,6 +36,7 @@ async def api_preprocess(request_data: PreprocessRequest, request: Request):
 @router.post("/ocr", response_model=OCRResponse)
 async def api_ocr(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     config: str = Form(...),
     engine: str = Form("easyocr"),
@@ -50,6 +51,7 @@ async def api_ocr(
 
         return await execute_ocr_pipeline(
             client=client,
+            background_tasks=background_tasks,
             file_bytes=file_bytes,
             filename=file.filename,
             content_type=file.content_type,

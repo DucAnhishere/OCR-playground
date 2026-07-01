@@ -6,7 +6,8 @@ import uuid
 
 import httpx
 
-from const import PADDLE_SERVICE_URL, PYTORCH_SERVICE_URL, IMAGE_PROCESSOR_URL, ENGINE_ROUTING_MAP, OCR_TIMEOUT_SECONDS, PREPROCESS_TIMEOUT_SECONDS
+from fastapi import BackgroundTasks
+from const import PADDLE_SERVICE_URL, PYTORCH_SERVICE_URL, IMAGE_PROCESSOR_URL, ENGINE_ROUTING_MAP, OCR_TIMEOUT_SECONDS, PREPROCESS_TIMEOUT_SECONDS, SUPABASE_URL, SUPABASE_BUCKET
 from exceptions import ImageProcessorError, OCRServiceError, UnsupportedEngineError
 from services.supabase_service import is_storage_configured, upload_to_supabase
 from shared.contracts import ModelSelectionRequest, ModelSelectionResponse, OCRServiceRequest, OCRServiceResponse
@@ -206,23 +207,21 @@ async def upload_best_effort(
     client: httpx.AsyncClient,
     file_bytes: bytes,
     filename: str,
-    content_type: str,
-    warnings: list[str],
-) -> tuple[str | None, str]:
+    content_type: str
+):
     if not is_storage_configured():
-        warnings.append("Supabase storage is disabled or not configured; using base64 fallback.")
-        return None, "disabled"
+        return
 
     try:
-        return await upload_to_supabase(client, file_bytes, filename, content_type), "uploaded"
+        await upload_to_supabase(client, file_bytes, filename, content_type)
+        logger.info("Successfully uploaded %s to Supabase", filename)
     except Exception as e:
         logger.warning("Supabase upload failed for %s: %s", filename, e)
-        warnings.append(f"Supabase upload failed for {filename}; using base64 fallback.")
-        return None, "failed"
 
 
 async def execute_ocr_pipeline(
     client: httpx.AsyncClient,
+    background_tasks: BackgroundTasks,
     file_bytes: bytes,
     filename: str,
     content_type: str,
@@ -232,12 +231,7 @@ async def execute_ocr_pipeline(
     merge_boxes: bool
 ) -> dict:
     """
-    Orchestrates the full OCR pipeline:
-    1. Upload the original image to Supabase.
-    2. Preprocess the image via the Image Processor service.
-    3. Upload the preprocessed image to Supabase.
-    4. Run OCR via the appropriate engine microservice.
-    5. Merge adjacent word bounding boxes (optional).
+    Orchestrates the full OCR pipeline with Background Tasks for Supabase uploads.
     """
     start_time = time.time()
     warnings = []
@@ -253,12 +247,11 @@ async def execute_ocr_pipeline(
         original_base64 = f"data:{content_type};base64," + base64.b64encode(file_bytes).decode('utf-8')
         ext = filename.rsplit('.', 1)[-1] if '.' in filename else 'jpg'
 
-        # Upload original image to Supabase as a best-effort side effect.
-        with tracer.start_as_current_span("upload_original"):
-            orig_filename = f"original_{uuid.uuid4().hex}.{ext}"
-            original_url, original_storage_status = await upload_best_effort(
-                client, file_bytes, orig_filename, content_type, warnings
-            )
+        orig_filename = f"original_{uuid.uuid4().hex}.{ext}"
+        original_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{orig_filename}" if is_storage_configured() else None
+        
+        # Fire and forget upload using BackgroundTasks
+        background_tasks.add_task(upload_best_effort, client, file_bytes, orig_filename, content_type)
 
         # 1. Route to Image Processor
         with tracer.start_as_current_span("preprocess_image"):
@@ -293,12 +286,11 @@ async def execute_ocr_pipeline(
             final_display_base64 = processed_base64
             final_filename = f"processed_{uuid.uuid4().hex}.jpg"
 
-        # Upload the chosen final image to Supabase as a best-effort side effect.
-        with tracer.start_as_current_span("upload_processed"):
-            final_bytes = base64.b64decode(final_display_base64.split(",", 1)[-1])
-            processed_url, processed_storage_status = await upload_best_effort(
-                client, final_bytes, final_filename, "image/jpeg", warnings
-            )
+        processed_url = f"{SUPABASE_URL}/storage/v1/object/public/{SUPABASE_BUCKET}/{final_filename}" if is_storage_configured() else None
+
+        # Fire and forget upload using BackgroundTasks
+        final_bytes = base64.b64decode(final_display_base64.split(",", 1)[-1])
+        background_tasks.add_task(upload_best_effort, client, final_bytes, final_filename, "image/jpeg")
 
         # 3. Perform box merging
         with tracer.start_as_current_span("merge_boxes") as merge_span:
@@ -309,9 +301,12 @@ async def execute_ocr_pipeline(
         pipeline_span.set_attribute("ocr.total_seconds", round(elapsed, 3))
         pipeline_span.set_attribute("ocr.gpu_accelerated", gpu_active)
 
+        if not is_storage_configured():
+            warnings.append("Supabase storage is disabled or not configured; uploading is skipped.")
+
         return {
             "success": True,
-            "preprocessed_image": final_display_base64,  # Legacy fallback for frontend
+            "preprocessed_image": final_display_base64,  # Base64 fallback for frontend display
             "original_image_url": original_url,
             "processed_image_url": processed_url,
             "results": words,
@@ -319,9 +314,7 @@ async def execute_ocr_pipeline(
                 **meta,
                 "words_count": len(words),
                 "detected_tables": detected_tables,
-                "storage_status": "uploaded"
-                if original_storage_status == "uploaded" and processed_storage_status == "uploaded"
-                else ("disabled" if "disabled" in {original_storage_status, processed_storage_status} else "failed"),
+                "storage_status": "background_uploading" if is_storage_configured() else "disabled",
             },
             "engine": engine,
             "execution_time_seconds": round(elapsed, 3),
