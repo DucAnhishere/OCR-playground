@@ -258,7 +258,7 @@ function App() {
       
       if (res.ok) {
         const data = await res.json();
-        const finalImage = data.processed_image_url || data.preprocessed_image;
+        const finalImage = data.preprocessed_image || data.processed_image_url;
         const finalResults = data.results;
         const finalTables = data.metadata.detected_tables || [];
         const finalStats = {
