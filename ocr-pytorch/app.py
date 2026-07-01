@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import base64
 import gc
+import os
 import time
 import torch
 import easyocr
@@ -116,8 +117,14 @@ def get_vietocr_predictor() -> Predictor:
         print(f"[PyTorch Service] Initializing VietOCR ({VIETOCR_CONFIG_NAME})...")
         config = Cfg.load_config_from_name(VIETOCR_CONFIG_NAME)
         
-        # Load local weights mapped into container to avoid downloading
+        # Load local weights mapped into container to avoid downloading repeatedly
         config['weights'] = VIETOCR_WEIGHTS_PATH
+        if not os.path.exists(VIETOCR_WEIGHTS_PATH):
+            print(f"[PyTorch Service] Weights not found at {VIETOCR_WEIGHTS_PATH}. Downloading from vocr.vn...")
+            os.makedirs(os.path.dirname(VIETOCR_WEIGHTS_PATH), exist_ok=True)
+            import urllib.request
+            urllib.request.urlretrieve("https://vocr.vn/data/vietocr/vgg_transformer.pth", VIETOCR_WEIGHTS_PATH)
+            print("[PyTorch Service] VietOCR weights downloaded successfully.")
         
         if torch.backends.mps.is_available():
             config['device'] = 'mps'
