@@ -105,7 +105,16 @@ ocr-playground/
 ├── ocr-paddle/               # PaddlePaddle Container (PaddleOCR & PP-StructureV3)
 ├── docs/                     # Project documentation and architecture details
 ├── weights/                  # Persistent host-cached directory for model weights
-└── download_weights.py       # Host-based pre-download script for weight files
+├── docker/                   # Docker Compose Configuration files
+│   ├── docker-compose.yml
+│   ├── docker-compose.dev.yml
+│   └── docker-compose.gpu.yml
+└── scripts/                  # Build, Deploy, and Utility Scripts
+    ├── build.sh
+    ├── deploy.sh
+    ├── deploy.ps1
+    ├── stop.sh
+    └── download_weights.py
 ```
 
 ---
@@ -140,7 +149,7 @@ pip install -r ocr-pytorch/requirements.txt
 pip install -r ocr-paddle/requirements.txt
 
 # 2. Run the weight pre-downloader
-python download_weights.py
+python scripts/download_weights.py
 ```
 All weights will be downloaded to `~/.cache`, `~/.EasyOCR`, and `~/.paddlex` and copied to the local `./weights` project folder.
 
@@ -150,9 +159,9 @@ All weights will be downloaded to `~/.cache`, `~/.EasyOCR`, and `~/.paddlex` and
 Once weights are cached, spin up the entire Docker Compose stack:
 
 ```bash
-./deploy.sh
+./scripts/deploy.sh
 # or manually:
-# docker-compose up --build -d
+# docker compose -f docker/docker-compose.yml up --build -d
 ```
 
 This deployment script will:
@@ -169,19 +178,21 @@ This deployment script will:
 
 To inspect the system logs at any time:
 ```bash
-docker compose logs -f
+docker compose -f docker/docker-compose.yml logs -f
 ```
 
 To stop all services:
 ```bash
-docker compose down
+./scripts/stop.sh
+# or manually:
+# docker compose -f docker/docker-compose.yml down
 ```
 
 ### Local Development Override
 For day-to-day development with source bind mounts and FastAPI reload enabled, run:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up --build
 ```
 
 The default `docker-compose.yml` is intentionally closer to production: no source bind mounts and no reload commands.

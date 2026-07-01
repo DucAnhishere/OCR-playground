@@ -3,12 +3,12 @@ import shutil
 import sys
 from pathlib import Path
 
-# Add backend directory to path to resolve imports if necessary
-backend_dir = Path(__file__).parent / "backend"
+# Add backend directory to path to resolve imports if necessary (since script is in scripts/)
+backend_dir = Path(__file__).parent.parent / "backend"
 sys.path.append(str(backend_dir))
 
 # Ensure local weights directories exist
-weights_dir = Path(__file__).parent / "weights"
+weights_dir = Path(__file__).parent.parent / "weights"
 easyocr_dest = weights_dir / "easyocr"
 paddle_dest = weights_dir / "paddleocr"
 paddlex_dest = weights_dir / "paddlex"
@@ -51,7 +51,6 @@ try:
     dummy_img = np.ones((100, 100, 3), dtype=np.uint8) * 255
     structure.predict(dummy_img)
 
-    
     # Copy to project folder
     src = Path.home() / ".paddleocr"
     if src.exists():
